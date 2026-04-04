@@ -1,0 +1,12 @@
+{
+  "name": "obsidian-rss-platform",
+  "private": true,
+  "version": "0.1.0",
+  "packageManager": "pnpm@10.8.0",
+  "scripts": {
+    "dev:web": "pnpm --filter @knowledge/web dev",
+    "build:web": "pnpm --filter @knowledge/web build",
+    "check:web": "pnpm --filter @knowledge/web astro check",
+    "notes:sync": "pnpm --filter @knowledge/web notes:sync"
+  }
+}
