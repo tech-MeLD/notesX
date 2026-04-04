@@ -1,0 +1,105 @@
+---
+import { getCollection } from "astro:content";
+import NoteCard from "../components/notes/NoteCard.astro";
+import FeedExplorer from "../components/feed/FeedExplorer.svelte";
+import BaseLayout from "../layouts/BaseLayout.astro";
+import { fetchRssEntries, fetchRssTags } from "../lib/api";
+import { sortNotes } from "../lib/notes";
+import { apiBaseUrl, siteConfig } from "../lib/site";
+
+const notes = sortNotes(await getCollection("notes", ({ data }) => !data.draft));
+
+let feedPayload = { items: [], total: 0, cached: false };
+let tags = [];
+
+try {
+  [feedPayload, tags] = await Promise.all([
+    fetchRssEntries({ sort: "hot", limit: 6 }),
+    fetchRssTags()
+  ]);
+} catch (error) {
+  console.warn("Failed to preload RSS data", error);
+}
+---
+
+<BaseLayout title={`${siteConfig.name} | 首页`} description={siteConfig.description}>
+  <section class="grid gap-10 lg:grid-cols-[1.2fr_0.8fr] lg:items-end">
+    <div class="flex flex-col gap-7">
+      <span class="w-fit rounded-full border border-black/10 px-4 py-2 text-xs uppercase tracking-[0.22em] text-[var(--muted)]">
+        Obsidian x RSS x AI
+      </span>
+
+      <div class="max-w-3xl">
+        <p class="font-display text-6xl leading-[0.94] text-balance text-[var(--ink)] md:text-7xl">
+          让知识库和资讯流在同一个站点里持续发光。
+        </p>
+        <p class="mt-6 max-w-2xl text-base leading-8 text-[var(--muted)] md:text-lg">
+          用 Astro Content Collections 承接 Obsidian 笔记，用 FastAPI 异步聚合 RSS 和 AI 摘要，用
+          Supabase 负责数据与实时更新。这个站点骨架就是为这种工作流设计的。
+        </p>
+      </div>
+
+      <div class="flex flex-wrap gap-4">
+        <a
+          class="inline-flex items-center justify-center rounded-full bg-[var(--ink)] px-6 py-3 text-sm font-semibold text-white transition hover:bg-[var(--accent)]"
+          href="/notes"
+        >
+          浏览笔记
+        </a>
+        <a
+          class="inline-flex items-center justify-center rounded-full border border-black/10 px-6 py-3 text-sm font-semibold text-[var(--ink)] transition hover:border-[var(--accent)] hover:text-[var(--accent)]"
+          href="/rss"
+        >
+          查看资讯流
+        </a>
+      </div>
+    </div>
+
+    <aside class="rounded-[2rem] border border-black/8 bg-[linear-gradient(180deg,rgba(255,255,255,0.82),rgba(255,255,255,0.52))] p-7 shadow-[0_30px_80px_rgba(29,31,35,0.08)]">
+      <p class="text-xs uppercase tracking-[0.22em] text-[var(--muted)]">当前重点</p>
+      <div class="mt-5 space-y-5">
+        <div>
+          <p class="font-display text-3xl text-[var(--accent)]">{notes.length}</p>
+          <p class="mt-2 text-sm leading-7 text-[var(--muted)]">本地笔记通过 Content Collections 统一建模，保留目录结构与元数据。</p>
+        </div>
+        <div>
+          <p class="font-display text-3xl text-[var(--accent)]">{feedPayload.total}</p>
+          <p class="mt-2 text-sm leading-7 text-[var(--muted)]">RSS 条目从 FastAPI 标准 REST API 读取，默认按热度排序，支持标签过滤。</p>
+        </div>
+        <div>
+          <p class="font-display text-3xl text-[var(--accent)]">{tags.length}</p>
+          <p class="mt-2 text-sm leading-7 text-[var(--muted)]">标签由笔记和资讯共同驱动，后续可以继续扩展为专题页、搜索与支付功能。</p>
+        </div>
+      </div>
+    </aside>
+  </section>
+
+  <section class="grid gap-8 lg:grid-cols-[0.9fr_1.1fr]">
+    <div>
+      <p class="text-xs uppercase tracking-[0.22em] text-[var(--muted)]">精选笔记</p>
+      <h2 class="mt-4 font-display text-4xl text-[var(--ink)]">Obsidian 内容不再只是静态导出</h2>
+      <p class="mt-4 max-w-xl text-sm leading-7 text-[var(--muted)]">
+        这里的笔记保留了 Markdown 原貌，同时支持 Obsidian 风格的相对文档链接、自身锚点链接和附件目录约定。
+      </p>
+    </div>
+
+    <div>
+      {notes.slice(0, 3).map((entry) => <NoteCard entry={entry} />)}
+    </div>
+  </section>
+
+  <section class="grid gap-8">
+    <div class="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+      <div>
+        <p class="text-xs uppercase tracking-[0.22em] text-[var(--muted)]">实时资讯</p>
+        <h2 class="mt-3 font-display text-4xl text-[var(--ink)]">来自你的 RSS 聚合 API</h2>
+      </div>
+
+      <a class="text-sm font-semibold text-[var(--accent)]" href="/rss">
+        前往完整列表 →
+      </a>
+    </div>
+
+    <FeedExplorer client:load apiBaseUrl={apiBaseUrl} initialEntries={feedPayload.items} initialTags={tags} />
+  </section>
+</BaseLayout>

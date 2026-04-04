@@ -1,0 +1,37 @@
+---
+import type { CollectionEntry } from "astro:content";
+import { formatDate, noteIdToUrl } from "../../lib/notes";
+
+interface Props {
+  entry: CollectionEntry<"notes">;
+}
+
+const { entry } = Astro.props;
+const noteUrl = noteIdToUrl(entry.id);
+---
+
+<article class="group border-t border-black/10 py-5">
+  <div class="flex flex-wrap items-center gap-3 text-xs uppercase tracking-[0.2em] text-[var(--muted)]">
+    <span>{formatDate(entry.data.updatedAt ?? entry.data.createdAt)}</span>
+    <span>{entry.data.tags.join(" / ") || "未分类"}</span>
+  </div>
+
+  <div class="mt-3 flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+    <div class="max-w-2xl">
+      <h3 class="font-display text-2xl transition group-hover:text-[var(--accent)]">
+        <a href={noteUrl}>{entry.data.title}</a>
+      </h3>
+      <p class="mt-2 text-sm leading-7 text-[var(--muted)]">
+        {entry.data.description || "来自你的 Obsidian 笔记库，支持层级目录、相对引用和自定义标签。"}
+      </p>
+    </div>
+
+    <a
+      class="inline-flex items-center gap-2 text-sm font-semibold text-[var(--accent)] transition hover:gap-3"
+      href={noteUrl}
+    >
+      阅读笔记
+      <span aria-hidden="true">→</span>
+    </a>
+  </div>
+</article>

@@ -1,0 +1,30 @@
+---
+import BaseLayout from "../layouts/BaseLayout.astro";
+import FeedExplorer from "../components/feed/FeedExplorer.svelte";
+import { fetchRssEntries, fetchRssTags } from "../lib/api";
+import { apiBaseUrl } from "../lib/site";
+
+let feedPayload = { items: [], total: 0, cached: false };
+let tags = [];
+
+try {
+  [feedPayload, tags] = await Promise.all([
+    fetchRssEntries({ sort: "hot", limit: 12 }),
+    fetchRssTags()
+  ]);
+} catch (error) {
+  console.warn("Failed to preload RSS page", error);
+}
+---
+
+<BaseLayout title="资讯流 | Knowledge Observatory" description="查看按热度和标签过滤的 RSS 聚合内容。">
+  <section class="max-w-3xl">
+    <p class="text-xs uppercase tracking-[0.22em] text-[var(--muted)]">RSS Aggregation</p>
+    <h1 class="mt-4 font-display text-5xl text-[var(--ink)]">热度排序、标签过滤、AI 摘要，一页完成。</h1>
+    <p class="mt-5 text-base leading-8 text-[var(--muted)]">
+      前端只消费标准 RESTful API；抓取、去重、摘要与缓存全部留给 FastAPI 和 Supabase。
+    </p>
+  </section>
+
+  <FeedExplorer client:load apiBaseUrl={apiBaseUrl} initialEntries={feedPayload.items} initialTags={tags} />
+</BaseLayout>

@@ -1,0 +1,52 @@
+---
+import { getCollection, render } from "astro:content";
+import BaseLayout from "../../layouts/BaseLayout.astro";
+import { formatDate, noteIdToUrl } from "../../lib/notes";
+
+export async function getStaticPaths() {
+  const entries = await getCollection("notes", ({ data }) => !data.draft);
+
+  return entries.map((entry) => ({
+    params: { slug: entry.id },
+    props: { entry }
+  }));
+}
+
+const { entry } = Astro.props;
+const { Content, headings } = await render(entry);
+---
+
+<BaseLayout title={`${entry.data.title} | Knowledge Observatory`} description={entry.data.description}>
+  <article class="grid gap-10 lg:grid-cols-[0.8fr_0.2fr]">
+    <div class="min-w-0">
+      <div class="max-w-3xl">
+        <div class="flex flex-wrap gap-3 text-xs uppercase tracking-[0.2em] text-[var(--muted)]">
+          <span>{formatDate(entry.data.updatedAt ?? entry.data.createdAt)}</span>
+          <span>{entry.data.tags.join(" / ") || "未分类"}</span>
+        </div>
+
+        <h1 class="mt-4 font-display text-5xl leading-tight text-[var(--ink)]">{entry.data.title}</h1>
+        <p class="mt-4 text-base leading-8 text-[var(--muted)]">{entry.data.description}</p>
+
+        <div class="prose prose-neutral mt-10 max-w-none prose-headings:font-display prose-headings:text-[var(--ink)] prose-p:text-[var(--muted)] prose-p:leading-8 prose-a:text-[var(--accent)] prose-strong:text-[var(--ink)] prose-code:text-[var(--accent)]">
+          <Content />
+        </div>
+      </div>
+    </div>
+
+    <aside class="lg:sticky lg:top-24 lg:h-fit">
+      <div class="rounded-[1.5rem] border border-black/8 bg-white/70 p-5">
+        <p class="text-xs uppercase tracking-[0.2em] text-[var(--muted)]">目录</p>
+        <ul class="mt-4 space-y-3 text-sm text-[var(--muted)]">
+          {headings.map((heading) => (
+            <li>
+              <a class="transition hover:text-[var(--accent)]" href={`${noteIdToUrl(entry.id)}#${heading.slug}`}>
+                {heading.text}
+              </a>
+            </li>
+          ))}
+        </ul>
+      </div>
+    </aside>
+  </article>
+</BaseLayout>
