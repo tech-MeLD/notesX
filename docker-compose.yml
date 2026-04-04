@@ -1,0 +1,9 @@
+services:
+  api:
+    build:
+      context: ./apps/api
+    env_file:
+      - ./apps/api/.env
+    ports:
+      - "8000:8000"
+    restart: unless-stopped
