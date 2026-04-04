@@ -1,6 +1,6 @@
 <script lang="ts">
   import { createClient } from "@supabase/supabase-js";
-  import { onDestroy } from "svelte";
+  import { onDestroy, onMount } from "svelte";
 
   export interface RssEntry {
     id: string;
@@ -42,7 +42,7 @@
   let sort = "hot";
   let loading = false;
   let error = "";
-  let channel: ReturnType<ReturnType<typeof createClient>["channel"]> | null = null;
+  let channel: { unsubscribe: () => unknown } | null = null;
 
   const supabaseUrl = import.meta.env.PUBLIC_SUPABASE_URL;
   const supabaseAnonKey = import.meta.env.PUBLIC_SUPABASE_ANON_KEY;
@@ -106,7 +106,9 @@
       .subscribe();
   }
 
-  subscribeRealtime();
+  onMount(() => {
+    subscribeRealtime();
+  });
 
   onDestroy(() => {
     channel?.unsubscribe();

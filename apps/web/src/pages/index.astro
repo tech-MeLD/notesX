@@ -3,14 +3,14 @@ import { getCollection } from "astro:content";
 import NoteCard from "../components/notes/NoteCard.astro";
 import FeedExplorer from "../components/feed/FeedExplorer.svelte";
 import BaseLayout from "../layouts/BaseLayout.astro";
-import { fetchRssEntries, fetchRssTags } from "../lib/api";
+import { fetchRssEntries, fetchRssTags, type RssEntryListResponse, type TagBucket } from "../lib/api";
 import { sortNotes } from "../lib/notes";
 import { apiBaseUrl, siteConfig } from "../lib/site";
 
 const notes = sortNotes(await getCollection("notes", ({ data }) => !data.draft));
 
-let feedPayload = { items: [], total: 0, cached: false };
-let tags = [];
+let feedPayload: RssEntryListResponse = { items: [], total: 0, cached: false };
+let tags: TagBucket[] = [];
 
 try {
   [feedPayload, tags] = await Promise.all([

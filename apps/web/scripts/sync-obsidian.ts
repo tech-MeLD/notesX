@@ -5,11 +5,11 @@ import matter from "gray-matter";
 
 const currentDirectory = fileURLToPath(new URL(".", import.meta.url));
 const projectRoot = path.resolve(currentDirectory, "..");
-const sourceRoot = process.env.OBSIDIAN_VAULT_DIR;
+const configuredSourceRoot = process.env.OBSIDIAN_VAULT_DIR ?? "";
 const notesRoot = path.join(projectRoot, "src", "content", "notes");
 const assetsRoot = path.join(projectRoot, "public", "notes-assets");
 
-if (!sourceRoot) {
+if (!configuredSourceRoot) {
   throw new Error("Missing OBSIDIAN_VAULT_DIR. Add it to apps/web/.env before running notes:sync.");
 }
 
@@ -61,7 +61,7 @@ function ensureFrontmatter(markdown: string, relativePath: string, fileStats: Aw
 }
 
 async function main() {
-  const absoluteSourceRoot = path.resolve(sourceRoot);
+  const absoluteSourceRoot = path.resolve(configuredSourceRoot);
   const files = await walkDirectory(absoluteSourceRoot);
 
   await rm(notesRoot, { recursive: true, force: true });

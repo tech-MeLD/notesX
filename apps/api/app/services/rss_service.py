@@ -7,6 +7,7 @@ import json
 import logging
 import re
 from datetime import UTC, datetime
+from decimal import Decimal
 from html import unescape
 from typing import Any
 
@@ -57,6 +58,8 @@ def _serialize_row(row: asyncpg.Record) -> dict[str, Any]:
     for key, value in row.items():
         if isinstance(value, datetime):
             payload[key] = value.isoformat()
+        elif isinstance(value, Decimal):
+            payload[key] = float(value)
         else:
             payload[key] = value
     return payload

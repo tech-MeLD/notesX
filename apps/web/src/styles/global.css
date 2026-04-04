@@ -34,16 +34,55 @@ body {
   text-wrap: balance;
 }
 
-.prose {
-  --tw-prose-body: var(--muted);
-  --tw-prose-headings: var(--ink);
-  --tw-prose-links: var(--accent);
-  --tw-prose-bold: var(--ink);
-  --tw-prose-code: var(--accent);
-  --tw-prose-quotes: var(--ink);
-  --tw-prose-quote-borders: rgba(19, 20, 24, 0.12);
-  --tw-prose-bullets: rgba(19, 20, 24, 0.4);
-  --tw-prose-hr: rgba(19, 20, 24, 0.08);
+.note-content {
+  color: var(--muted);
+  font-size: 1rem;
+  line-height: 2;
+}
+
+.note-content > * + * {
+  margin-top: 1.2rem;
+}
+
+.note-content h2,
+.note-content h3,
+.note-content h4 {
+  font-family: var(--font-display);
+  color: var(--ink);
+  line-height: 1.2;
+  margin-top: 2.4rem;
+}
+
+.note-content h2 {
+  font-size: 2rem;
+}
+
+.note-content h3 {
+  font-size: 1.5rem;
+}
+
+.note-content a {
+  color: var(--accent);
+}
+
+.note-content strong,
+.note-content code {
+  color: var(--ink);
+}
+
+.note-content ul,
+.note-content ol {
+  padding-left: 1.25rem;
+}
+
+.note-content li + li {
+  margin-top: 0.5rem;
+}
+
+.note-content blockquote {
+  border-left: 3px solid rgba(19, 20, 24, 0.12);
+  padding-left: 1rem;
+  color: var(--ink);
 }
 
 ::selection {

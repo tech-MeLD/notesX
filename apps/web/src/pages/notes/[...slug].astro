@@ -1,4 +1,6 @@
 ---
+export const prerender = true;
+
 import { getCollection, render } from "astro:content";
 import BaseLayout from "../../layouts/BaseLayout.astro";
 import { formatDate, noteIdToUrl } from "../../lib/notes";
@@ -28,7 +30,7 @@ const { Content, headings } = await render(entry);
         <h1 class="mt-4 font-display text-5xl leading-tight text-[var(--ink)]">{entry.data.title}</h1>
         <p class="mt-4 text-base leading-8 text-[var(--muted)]">{entry.data.description}</p>
 
-        <div class="prose prose-neutral mt-10 max-w-none prose-headings:font-display prose-headings:text-[var(--ink)] prose-p:text-[var(--muted)] prose-p:leading-8 prose-a:text-[var(--accent)] prose-strong:text-[var(--ink)] prose-code:text-[var(--accent)]">
+        <div class="note-content mt-10 max-w-none">
           <Content />
         </div>
       </div>

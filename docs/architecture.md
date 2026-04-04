@@ -101,6 +101,7 @@ docs/
 - 代码托管在 GitHub。
 - Astro 前端连接 Cloudflare Pages 或 Cloudflare Workers。
 - DNS 统一托管在 Cloudflare。
+- 如果走 Cloudflare Workers 部署，建议开启 `nodejs_compat`，因为 Svelte SSR 在构建期会提示 `node:async_hooks` 兼容警告。
 
 ### 后端
 

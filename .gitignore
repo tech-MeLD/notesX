@@ -1,6 +1,7 @@
 node_modules/
 .pnpm-store/
 apps/web/.astro/
+apps/web/.wrangler/
 apps/web/dist/
 apps/web/public/notes-assets/
 __pycache__/
