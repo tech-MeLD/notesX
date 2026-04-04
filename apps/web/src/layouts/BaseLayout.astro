@@ -1,0 +1,48 @@
+---
+import "../styles/global.css";
+import { siteConfig } from "../lib/site";
+
+interface Props {
+  title?: string;
+  description?: string;
+}
+
+const { title = siteConfig.name, description = siteConfig.description } = Astro.props;
+---
+
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>{title}</title>
+    <meta name="description" content={description} />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&family=Newsreader:opsz,wght@6..72,400;6..72,600&display=swap"
+      rel="stylesheet"
+    />
+  </head>
+  <body class="min-h-screen bg-[var(--surface)] text-[var(--ink)]">
+    <div class="pointer-events-none fixed inset-0 -z-10 bg-[radial-gradient(circle_at_top_left,_rgba(177,86,49,0.14),_transparent_32%),radial-gradient(circle_at_bottom_right,_rgba(36,95,86,0.14),_transparent_26%)]"></div>
+    <header class="sticky top-0 z-40 border-b border-black/5 bg-[color:rgba(245,239,230,0.88)] backdrop-blur">
+      <div class="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
+        <a class="flex flex-col" href="/">
+          <span class="font-display text-lg tracking-[0.22em] text-[var(--accent)] uppercase">{siteConfig.name}</span>
+          <span class="text-sm text-[var(--muted)]">{siteConfig.tagline}</span>
+        </a>
+
+        <nav class="flex items-center gap-5 text-sm font-medium text-[var(--muted)]">
+          <a class="transition hover:text-[var(--ink)]" href="/">首页</a>
+          <a class="transition hover:text-[var(--ink)]" href="/notes">笔记</a>
+          <a class="transition hover:text-[var(--ink)]" href="/rss">资讯流</a>
+        </nav>
+      </div>
+    </header>
+
+    <main class="mx-auto flex w-full max-w-6xl flex-col gap-20 px-6 py-10">
+      <slot />
+    </main>
+  </body>
+</html>
