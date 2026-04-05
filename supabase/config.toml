@@ -1,4 +1,8 @@
 project_id = "replace-with-your-project-ref"
 
+[db.seed]
+enabled = true
+sql_paths = ["./seeds/rss_test_sources.sql"]
+
 [functions.rss-summary-ready]
 verify_jwt = false

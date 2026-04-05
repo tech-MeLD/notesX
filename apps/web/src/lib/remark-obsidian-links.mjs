@@ -32,6 +32,18 @@ function encodePathSegments(relativePath) {
     .join("/");
 }
 
+function toCollectionId(relativePath) {
+  return normalizeSlashes(relativePath)
+    .replace(/\.mdx?$/i, "")
+    .split("/")
+    .filter(Boolean)
+    .map((segment) => {
+      const slugger = new GithubSlugger();
+      return slugger.slug(safeDecode(segment));
+    })
+    .join("/");
+}
+
 function normalizeHash(hash) {
   if (!hash) {
     return "";
@@ -82,7 +94,7 @@ export function obsidianMarkdownLinks(options = {}) {
       }
 
       if (/\.mdx?$/i.test(decodedPath)) {
-        const noteId = relativeToNotesRoot.replace(/\.mdx?$/i, "");
+        const noteId = toCollectionId(relativeToNotesRoot);
         node.url = `/notes/${encodePathSegments(noteId)}${normalizeHash(hash)}`;
       }
     });

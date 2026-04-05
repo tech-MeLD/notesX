@@ -1,4 +1,3 @@
-
 # Obsidian RSS Platform
 
 一个前后端分离的知识库站点骨架：
@@ -13,30 +12,54 @@
 
 - `apps/web`：Astro 网站、笔记内容、Obsidian 同步脚本
 - `apps/api`：FastAPI REST API、定时抓取、AI 摘要生成
-- `supabase`：数据库迁移、Edge Function
-- `docs/architecture.md`：架构说明与部署建议
+- `supabase`：数据库迁移、seed、Edge Function
+- `docs/architecture.md`：架构说明与设计说明
+- `docs/deployment-runbook.md`：按步骤执行的完整部署手册
 
 ## 快速开始
 
-1. 安装前端依赖：`pnpm.cmd install`
+1. 安装依赖：`pnpm.cmd install`
 2. 复制环境变量：
    - `apps/web/.env.example` -> `apps/web/.env`
    - `apps/api/.env.example` -> `apps/api/.env`
-   - `apps/api/.env` 里的 `DATABASE_URL` 建议使用 Supabase Dashboard `Connect` 页面提供的 session pooler 连接串；本地 Windows 或仅 IPv4 网络下，不建议默认用 `db.<project-ref>.supabase.co:5432` 直连地址。
-3. 启动前端：`pnpm.cmd dev:web`
-4. 创建 Python 虚拟环境并安装 API 依赖：
+3. 配置后端数据库连接：
+   - `apps/api/.env` 里的 `DATABASE_URL` 建议使用 Supabase Dashboard `Connect` 页面提供的 session pooler 连接串
+   - 本地 Windows 或仅 IPv4 网络下，不建议默认用 `db.<project-ref>.supabase.co:5432` 直连地址
+4. 同步 Obsidian 笔记：`pnpm.cmd notes:sync`
+5. 启动前端：`pnpm.cmd dev:web`
+6. 创建 Python 虚拟环境并安装 API 依赖：
    - `python -m venv apps/api/.venv`
    - `apps/api/.venv/Scripts/python.exe -m pip install -e apps/api[dev]`
-5. 启动 API：
+7. 启动 API：
    - 推荐：`apps/api/.venv/Scripts/python.exe apps/api/dev.py`
    - 备用：`apps/api/.venv/Scripts/python.exe -m uvicorn app.main:app --app-dir apps/api`
-   - Windows 下不建议默认使用 `--reload`，某些终端环境会在 uvicorn 的重载子进程阶段触发命名管道权限错误。
+   - Windows 下不建议默认使用 `--reload`，某些终端环境会在 uvicorn 的重载子进程阶段触发命名管道权限错误
+
+## Obsidian 同步说明
+
+- `pnpm.cmd notes:sync` 会先把 Obsidian Markdown 和附件同步到 `apps/web/src/content/notes` 与 `apps/web/public/notes-assets`
+- 同步完成后会自动执行 `astro sync`，刷新 Astro Content Collections 的索引
+- 如果你在同步时已经开着 `pnpm dev`，建议同步后重启一次开发服务器，避免开发期文件监听遗漏整目录替换
+- 当前 Obsidian Markdown 相对链接会在构建时转换成站内 `/notes/...` 路由，附件会转换成 `/notes-assets/...`
+
+## RSS 测试源
+
+项目内已经提供两个测试 RSS 源 seed：
+
+- Hacker News：`https://news.ycombinator.com/rss`
+- New York Times Home Page：`https://rss.nytimes.com/services/xml/rss/nyt/HomePage.xml`
+
+相关文件：
+
+- `supabase/seeds/rss_test_sources.sql`
+- `supabase/seed.sql`
+- `supabase/config.toml`
 
 ## 关键设计
 
-- Obsidian 笔记保持 Markdown 作为单一内容源，导入后进入 Astro Content Collections。
-- RSS 数据实时落到 Supabase PostgreSQL，默认通过 UNLOGGED 缓存表做短时查询缓存。
-- FastAPI 负责异步抓取、聚合、标签过滤、热度计算与 AI 摘要。
-- Supabase Edge Function 接数据库 webhook，把摘要完成事件写入 `rss_live_events`，前端通过 Realtime 订阅更新。
+- Obsidian 笔记保持 Markdown 作为单一内容源，导入后进入 Astro Content Collections
+- RSS 数据实时落到 Supabase PostgreSQL，默认通过 UNLOGGED 缓存表做短时查询缓存
+- FastAPI 负责异步抓取、聚合、标签过滤、热度计算与 AI 摘要
+- Supabase Edge Function 接数据库 webhook，把摘要完成事件写入 `rss_live_events`，前端通过 Realtime 订阅更新
 
-详细说明见 [docs/architecture.md](/D:/AI_projects/codex_project/test04/docs/architecture.md)。
+详细说明见 [architecture.md](/D:/AI_projects/codex_project/test04/docs/architecture.md) 和 [deployment-runbook.md](/D:/AI_projects/codex_project/test04/docs/deployment-runbook.md)。
