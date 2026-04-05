@@ -1,4 +1,4 @@
-project_id = "replace-with-your-project-ref"
+project_id = "vynhlxzbokvglyfqwkjb"
 
 [db.seed]
 enabled = true

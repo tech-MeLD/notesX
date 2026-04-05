@@ -3,13 +3,14 @@ node_modules/
 apps/web/.astro/
 apps/web/.wrangler/
 apps/web/dist/
-apps/web/public/notes-assets/
 __pycache__/
 *.py[cod]
 .venv/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+supabase/.temp/
+supabase/.branches/
 coverage/
 *.log
 .env
