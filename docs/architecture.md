@@ -108,6 +108,7 @@ docs/
 - FastAPI 用 `apps/api/Dockerfile` 打包。
 - 部署到你的云服务器 Docker 环境。
 - 环境变量中填 Supabase 数据库连接串与 AI 服务配置。
+- 如果运行环境不保证 IPv6，优先使用 Supabase `Connect` 页面里的 session pooler 连接串，而不是 `db.<project-ref>.supabase.co:5432` 的直连地址。
 
 ### Supabase
 

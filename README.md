@@ -22,12 +22,15 @@
 2. 复制环境变量：
    - `apps/web/.env.example` -> `apps/web/.env`
    - `apps/api/.env.example` -> `apps/api/.env`
+   - `apps/api/.env` 里的 `DATABASE_URL` 建议使用 Supabase Dashboard `Connect` 页面提供的 session pooler 连接串；本地 Windows 或仅 IPv4 网络下，不建议默认用 `db.<project-ref>.supabase.co:5432` 直连地址。
 3. 启动前端：`pnpm.cmd dev:web`
 4. 创建 Python 虚拟环境并安装 API 依赖：
    - `python -m venv apps/api/.venv`
    - `apps/api/.venv/Scripts/python.exe -m pip install -e apps/api[dev]`
 5. 启动 API：
-   - `apps/api/.venv/Scripts/python.exe -m uvicorn app.main:app --reload --app-dir apps/api`
+   - 推荐：`apps/api/.venv/Scripts/python.exe apps/api/dev.py`
+   - 备用：`apps/api/.venv/Scripts/python.exe -m uvicorn app.main:app --app-dir apps/api`
+   - Windows 下不建议默认使用 `--reload`，某些终端环境会在 uvicorn 的重载子进程阶段触发命名管道权限错误。
 
 ## 关键设计
 
