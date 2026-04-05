@@ -7,6 +7,9 @@
     "dev:web": "pnpm --filter @knowledge/web dev",
     "build:web": "pnpm --filter @knowledge/web build",
     "check:web": "pnpm --filter @knowledge/web astro check",
-    "notes:sync": "pnpm --filter @knowledge/web notes:sync"
+    "notes:sync": "pnpm --filter @knowledge/web notes:sync",
+    "cf:login:web": "pnpm --filter @knowledge/web cf:login",
+    "cf:preview:web": "pnpm --filter @knowledge/web cf:preview",
+    "cf:deploy:web": "pnpm --filter @knowledge/web cf:deploy"
   }
 }

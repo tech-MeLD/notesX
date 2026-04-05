@@ -35,7 +35,9 @@
 参考官方文档：
 
 - Supabase CLI `db push`：<https://supabase.com/docs/reference/cli/supabase-db-push>
-- Cloudflare Astro 部署：<https://developers.cloudflare.com/pages/framework-guides/deploy-an-astro-site/>
+- Astro Cloudflare 部署：<https://docs.astro.build/zh-cn/guides/deploy/cloudflare/>
+- Cloudflare Node.js 兼容：<https://developers.cloudflare.com/workers/runtime-apis/nodejs/>
+- Cloudflare 本地环境变量：<https://developers.cloudflare.com/workers/local-development/environment-variables/>
 - Astro Content Collections API：<https://docs.astro.build/reference/modules/astro-content/>
 
 ## 2. 推送到 GitHub
@@ -227,7 +229,21 @@ curl -X POST http://127.0.0.1:8000/api/v1/rss-fetch-jobs \
 
 ## 5. 部署前端到 Cloudflare
 
-本项目前端已经使用 `@astrojs/cloudflare` 适配器。
+本项目前端已经使用 `@astrojs/cloudflare` 适配器，并统一按 Cloudflare Workers 部署。
+
+仓库中已提供最小配置文件：
+
+- [wrangler.toml](/D:/AI_projects/codex_project/test04/apps/web/wrangler.toml)
+
+这个文件只保留必须版本化的 Cloudflare 设置：
+
+- Worker 名称
+- `compatibility_date`
+- `nodejs_compat`
+- `global_fetch_strictly_public`
+- observability 开关
+
+Astro 适配器会在构建时生成 Worker 入口和静态资源映射，所以这里不额外手写 `main`、`assets`、KV 或 Images 的完整部署细节，避免把配置做重。
 
 ### 5.1 配置前端环境变量
 
@@ -244,6 +260,12 @@ Copy-Item apps/web/.env.example apps/web/.env
 - `PUBLIC_SUPABASE_URL`
 - `PUBLIC_SUPABASE_ANON_KEY`
 - `OBSIDIAN_VAULT_DIR` 仅本地同步笔记时需要，线上部署可以不填
+
+说明：
+
+- 你现在采用的是“本地 build，再用 Wrangler deploy”的最小方案，所以前端部署时直接读取本地 `apps/web/.env`
+- 这几个 `PUBLIC_*` 值会在构建阶段注入到前端，不需要额外放进 Worker Secret
+- 如果你后面改成 Cloudflare Workers Builds 或 GitHub 自动部署，再把同样的 `PUBLIC_*` 变量配置到 Cloudflare 的构建环境即可
 
 ### 5.2 同步 Obsidian 内容
 
@@ -262,39 +284,59 @@ pnpm notes:sync
 
 ### 5.3 本地构建检查
 
+在仓库根目录执行：
+
 ```powershell
-pnpm build
-pnpm astro check
+pnpm build:web
+pnpm check:web
+```
+
+如果你想用更接近 Cloudflare 的方式预览，也可以执行：
+
+```powershell
+pnpm cf:preview:web
 ```
 
 ### 5.4 登录 Cloudflare 并部署
 
-在 `apps/web` 目录执行：
+在仓库根目录执行：
 
 ```powershell
-pnpm dlx wrangler login
-pnpm dlx wrangler deploy
+pnpm cf:login:web
+pnpm cf:deploy:web
 ```
 
-如果你想走 Git 集成，也可以把仓库连接到 Cloudflare Pages / Workers Builds，但对当前项目来说，先用 `wrangler deploy` 是最直接、最容易排查问题的方案。
+如果你更习惯在 `apps/web` 目录操作，对应命令是：
+
+```powershell
+pnpm cf:login
+pnpm cf:deploy
+```
+
+当前项目最推荐先走本地 `wrangler deploy` 到 Workers，这条路径最短，也最容易排查问题。
 
 ### 5.5 Cloudflare 兼容设置
 
-由于 Svelte SSR 会涉及 `node:async_hooks`，建议在 Cloudflare Worker 上开启 `nodejs_compat`。
-
-如果你后续补 `wrangler.toml`，建议至少包含：
+由于 Svelte SSR 会涉及 `node:async_hooks`，仓库里的 [wrangler.toml](/D:/AI_projects/codex_project/test04/apps/web/wrangler.toml) 已经默认开启：
 
 ```toml
-compatibility_flags = ["nodejs_compat"]
+compatibility_flags = ["nodejs_compat", "global_fetch_strictly_public"]
 ```
 
-Cloudflare 官方参考：<https://developers.cloudflare.com/workers/runtime-apis/nodejs/>
+这正是 Astro 官方在 Cloudflare SSR 场景下推荐的最小兼容组合。
+
+### 5.6 首次 Cloudflare 部署后建议检查
+
+1. 打开 Cloudflare Dashboard，确认 Worker 名称为 `knowledge-web`
+2. 检查默认域名返回首页而不是 404
+3. 访问 `/notes` 与 `/rss`，确认客户端脚本、图片附件和 RSS 页面都正常
+4. 如果前端页面出现 hydration mismatch，再去 Cloudflare 控制台关闭 Auto Minify
 
 ## 6. DNS 与域名
 
 如果你的域名已经在 Cloudflare：
 
-1. 把前端 Worker 或 Pages 绑定到主域名或子域名，例如 `knowledge.example.com`
+1. 把前端 Worker 绑定到主域名或子域名，例如 `knowledge.example.com`
 2. 把后端 API 单独绑定到另一个子域名，例如 `api.example.com`
 3. 前端 `.env` 里的 `PUBLIC_API_BASE_URL` 指向 `https://api.example.com`
 4. 后端 `.env` 里的 `PUBLIC_SITE_URL` 指向 `https://knowledge.example.com`

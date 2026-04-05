@@ -15,6 +15,7 @@
 - `supabase`：数据库迁移、seed、Edge Function
 - `docs/architecture.md`：架构说明与设计说明
 - `docs/deployment-runbook.md`：按步骤执行的完整部署手册
+- `apps/web/wrangler.toml`：Cloudflare Workers 最小部署配置
 
 ## 快速开始
 
@@ -41,6 +42,16 @@
 - 同步完成后会自动执行 `astro sync`，刷新 Astro Content Collections 的索引
 - 如果你在同步时已经开着 `pnpm dev`，建议同步后重启一次开发服务器，避免开发期文件监听遗漏整目录替换
 - 当前 Obsidian Markdown 相对链接会在构建时转换成站内 `/notes/...` 路由，附件会转换成 `/notes-assets/...`
+
+## Cloudflare 部署
+
+- 当前前端部署目标统一为 Cloudflare Workers，不再额外拆 Pages 配置
+- 仓库已包含最小可用的 [wrangler.toml](/D:/AI_projects/codex_project/test04/apps/web/wrangler.toml)
+- 推荐直接在仓库根目录执行：
+  - `pnpm.cmd cf:login:web`
+  - `pnpm.cmd cf:preview:web`
+  - `pnpm.cmd cf:deploy:web`
+- 前端构建时会读取本地 `apps/web/.env`；如果你后续改成 Cloudflare Workers Builds，再把这几个 `PUBLIC_*` 变量同步到 Cloudflare 构建环境即可
 
 ## RSS 测试源
 

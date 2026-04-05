@@ -6,9 +6,10 @@ import rehypeSlug from "rehype-slug";
 import { obsidianMarkdownLinks } from "./src/lib/remark-obsidian-links.mjs";
 
 const notesRoot = new URL("./src/content/notes/", import.meta.url);
+const site = process.env.PUBLIC_SITE_URL?.replace(/\/$/, "") || "https://knowledge.example.com";
 
 export default defineConfig({
-  site: "https://knowledge.example.com",
+  site,
   output: "server",
   adapter: cloudflare(),
   integrations: [svelte()],
