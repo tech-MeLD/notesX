@@ -1,0 +1,24 @@
+Metadata-Version: 2.4
+Name: knowledge-rss-api
+Version: 0.1.0
+Summary: FastAPI backend for RSS aggregation, hot ranking, and AI summaries
+Requires-Python: >=3.12
+Description-Content-Type: text/markdown
+Requires-Dist: apscheduler>=3.11.0
+Requires-Dist: asyncpg>=0.30.0
+Requires-Dist: fastapi>=0.115.0
+Requires-Dist: feedparser>=6.0.11
+Requires-Dist: httpx>=0.28.1
+Requires-Dist: pydantic>=2.10.6
+Requires-Dist: pydantic-settings>=2.8.1
+Requires-Dist: pyjwt[crypto]>=2.10.1
+Requires-Dist: python-dateutil>=2.9.0.post0
+Requires-Dist: uvicorn[standard]>=0.34.0
+Provides-Extra: dev
+Requires-Dist: pytest>=8.3.5; extra == "dev"
+Requires-Dist: pytest-asyncio>=0.25.3; extra == "dev"
+Requires-Dist: ruff>=0.11.4; extra == "dev"
+
+# knowledge-rss-api
+
+FastAPI backend responsible for RSS ingestion, hot ranking, AI summarization, and RESTful APIs.
