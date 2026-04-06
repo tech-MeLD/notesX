@@ -25,7 +25,7 @@ jobs:
 
         # 2. 构建镜像 (注意：这里需要指定 Dockerfile 的位置和构建上下文)
         # 假设你在项目根目录执行，-f 指向 api 的 Dockerfile
-        docker build -t $IMAGE_NAME -f apps/api/Dockerfile apps/api .
+        docker build -t $IMAGE_NAME -f apps/api/Dockerfile apps/api
         
         # 3. 推送到阿里云 ACR
         docker push $IMAGE_NAME
