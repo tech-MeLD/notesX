@@ -252,12 +252,29 @@ export API_PYTHON_IMAGE=registry.cn-hangzhou.aliyuncs.com/<namespace>/python:3.1
 
 #### 4.4.2 长期最优方案：不要在 ECS 上 build，改成 ACR 预构建后 pull
 
-这条路径更适合阿里云国内服务器，也是我更推荐的方案：
+这条路径更适合阿里云国内服务器，也是我更推荐的方案。
 
-1. 在阿里云 ACR 创建私有仓库
-2. 绑定 GitHub 仓库作为代码源
-3. 让 ACR 自动根据仓库里的 [Dockerfile](/D:/AI_projects/codex_project/test04/apps/api/Dockerfile) 构建镜像
-4. ECS 上只执行 `docker compose pull` 和 `docker compose up -d`
+当前项目更建议使用 GitHub Actions 负责构建，再把镜像推送到 ACR；ACR 只作为镜像仓库使用。这样通常比“让 ACR 直接拉 GitHub 代码构建”更稳，也更容易排查失败原因：
+
+1. GitHub Actions 负责构建 API 镜像
+2. 构建完成后推送到阿里云 ACR
+3. ECS 上只执行 `docker compose pull` 和 `docker compose up -d`
+
+原因：
+
+- GitHub Actions 的日志和缓存能力更好，调试体验通常优于 ACR 在线构建
+- ACR 只负责提供国内拉取速度，不再承担构建排障
+- 你可以很方便地加上 `latest`、`sha` 这类镜像标签，回滚更清晰
+
+仓库里已经提供了示例工作流：
+
+- [docker-build-in-ACR.yml](/D:/AI_projects/codex_project/test04/.github/workflows/docker-build-in-ACR.yml)
+
+需要在 GitHub 仓库中配置这些 Secrets：
+
+- `ACR_REGISTRY`
+- `ACR_USERNAME`
+- `ACR_PASSWORD`
 
 服务器侧命令会变成：
 
@@ -273,17 +290,17 @@ docker compose up -d api
 - 服务器只从阿里云 ACR 拉最终镜像，通常会稳定得多
 - 版本管理也更清晰，后面你做回滚会更轻松
 
-如果你在 ACR 中直接绑定 GitHub 作为代码源，阿里云官方文档里提到：
+如果你更倾向于把构建也放在 ACR 中，阿里云官方文档也支持“从代码仓库构建镜像”。这种方式可以作为备选方案。阿里云文档里提到：
 
 - 可以开启“代码变更时自动构建镜像”
 - 如果代码源在中国大陆以外，可以按需开启“使用中国大陆以外服务器构建”
 - “Build Without Cache” 建议关闭，否则每次都重新拉基础镜像，构建会更慢
 
-对你当前的 GitHub 场景，我的建议是：
+对你当前这个 GitHub + ECS + ACR 的场景，我的建议是：
 
-- 先试 ACR 自动构建
-- 如果 ACR 拉 GitHub 偶尔慢，再根据实际情况决定是否开启海外构建
+- 优先用 GitHub Actions buildx 构建并推送到 ACR
 - ECS 侧始终只做 `pull + up -d`
+- ACR 在线构建只作为备选，不作为主路径
 
 ### 4.5 手动触发一次抓取测试
 
