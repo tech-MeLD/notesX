@@ -20,8 +20,9 @@ jobs:
     - name: Build and Push Docker Image
       run: |
         # 1. 定义镜像名称
-        IMAGE_NAME=crpi-2iyt4x8zo4oz9sv2.cn-hangzhou.personal.cr.aliyuncs.com/my_github_projects/notesx:latest
-        
+        REGISTRY=crpi-2iyt4x8zo4oz9sv2.cn-hangzhou.personal.cr.aliyuncs.com
+        IMAGE_NAME=$REGISTRY/my_github_projects/notesx:latest
+
         # 2. 构建镜像 (注意：这里需要指定 Dockerfile 的位置和构建上下文)
         # 假设你在项目根目录执行，-f 指向 api 的 Dockerfile
         docker build -t $IMAGE_NAME -f apps/api/Dockerfile apps/api .
