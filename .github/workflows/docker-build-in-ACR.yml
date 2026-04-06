@@ -1,0 +1,42 @@
+name: Docker Build and Push
+on:
+  push:
+    branches: [ "main" ]
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Login to ACR
+      uses: aliyun/acr-login@v1
+      with:
+        login-server: registry.cn-hangzhou.aliyuncs.com
+        username: ${{ secrets.ACR_USERNAME }}
+        password: ${{ secrets.ACR_PASSWORD }}
+
+    - name: Build and Push Docker Image
+      run: |
+        # 1. 定义镜像名称
+        IMAGE_NAME=crpi-2iyt4x8zo4oz9sv2.cn-hangzhou.personal.cr.aliyuncs.com
+        
+        # 2. 构建镜像 (注意：这里需要指定 Dockerfile 的位置和构建上下文)
+        # 假设你在项目根目录执行，-f 指向 api 的 Dockerfile
+        docker build -t $IMAGE_NAME -f apps/api/Dockerfile .
+        
+        # 3. 推送到阿里云 ACR
+        docker push $IMAGE_NAME
+
+    # (可选步骤) 如果你想让阿里云服务器自动更新，需要增加 SSH 部署
+    # - name: Deploy to ECS via SSH
+    #   uses: appleboy/ssh-action@v1.0.3
+    #   with:
+    #     host: ${{ secrets.ECS_IP }}
+    #     username: root
+    #     key: ${{ secrets.SSH_PRIVATE_KEY }}
+    #     script: |
+    #       cd /www/wwwroot/你的项目目录
+    #       docker compose pull api
+    #       docker compose up -d api
