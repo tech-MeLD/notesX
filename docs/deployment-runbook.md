@@ -1,4 +1,4 @@
-# 部署操作手册
+﻿# 部署操作手册
 
 这份文档按最少步骤整理了整套部署流程，目标是：
 
@@ -38,6 +38,10 @@
 - Astro Cloudflare 部署：<https://docs.astro.build/zh-cn/guides/deploy/cloudflare/>
 - Cloudflare Node.js 兼容：<https://developers.cloudflare.com/workers/runtime-apis/nodejs/>
 - Cloudflare 本地环境变量：<https://developers.cloudflare.com/workers/local-development/environment-variables/>
+- Docker build context 与 `.dockerignore`：<https://docs.docker.com/build/building/context/>
+- Docker build cache：<https://docs.docker.com/build/cache/invalidation/>
+- 阿里云 ECS Docker 镜像加速：<https://help.aliyun.com/zh/ecs/use-cases/install-and-use-docker>
+- 阿里云 ACR 从代码仓库构建镜像：<https://www.alibabacloud.com/help/doc-detail/60997.html>
 - Astro Content Collections API：<https://docs.astro.build/reference/modules/astro-content/>
 
 ## 2. 推送到 GitHub
@@ -200,14 +204,86 @@ Windows 下不建议默认使用 `--reload`。
 
 ### 4.4 Docker 部署
 
-服务器上拉取 GitHub 代码后，在项目根目录执行：
+如果你的服务器在中国大陆，`docker compose build api` 慢，通常不是项目本身的问题，而是这三类网络瓶颈叠加：
+
+- Docker Hub 拉取基础镜像慢
+- PyPI 下载 Python 依赖慢
+- Docker 构建上下文过大
+
+这次仓库已经针对这三个点做了最小优化：
+
+- [Dockerfile](/D:/AI_projects/codex_project/test04/apps/api/Dockerfile) 支持通过构建参数覆盖基础镜像和 PyPI 源
+- [docker-compose.yml](/D:/AI_projects/codex_project/test04/docker-compose.yml) 支持本地构建，也支持直接使用预构建镜像
+- [apps/api/.dockerignore](/D:/AI_projects/codex_project/test04/apps/api/.dockerignore) 已排除 `.venv`、`tests`、`egg-info`、日志等无关内容，减少构建上下文
+
+#### 4.4.1 立即可用方案：继续在 ECS 上现构
+
+先按阿里云 ECS 官方文档给 Docker 配镜像加速器。登录阿里云容器镜像服务控制台，在“镜像工具 > 镜像加速器”页面获取你的专属加速地址，然后在 ECS 上执行：
 
 ```bash
+sudo mkdir -p /etc/docker
+sudo tee /etc/docker/daemon.json <<'EOF'
+{
+  "registry-mirrors": ["https://<your-mirror>.mirror.aliyuncs.com"]
+}
+EOF
+sudo systemctl daemon-reload
+sudo systemctl restart docker
+```
+
+然后在项目根目录构建：
+
+```bash
+export API_PIP_INDEX_URL=https://mirrors.aliyun.com/pypi/simple/
 docker compose build api
 docker compose up -d api
 ```
 
-项目里已经有最小可用的 [docker-compose.yml](/D:/AI_projects/codex_project/test04/docker-compose.yml) 和 [Dockerfile](/D:/AI_projects/codex_project/test04/apps/api/Dockerfile)。
+说明：
+
+- `API_PIP_INDEX_URL` 是这次新加的可选构建参数，用来加速 `pip install`
+- 如果你已经把 `python:3.12-slim` 同步到了阿里云 ACR，也可以继续加：
+
+```bash
+export API_PYTHON_IMAGE=registry.cn-hangzhou.aliyuncs.com/<namespace>/python:3.12-slim
+```
+
+这样基础镜像也会优先从国内仓库拉取
+
+#### 4.4.2 长期最优方案：不要在 ECS 上 build，改成 ACR 预构建后 pull
+
+这条路径更适合阿里云国内服务器，也是我更推荐的方案：
+
+1. 在阿里云 ACR 创建私有仓库
+2. 绑定 GitHub 仓库作为代码源
+3. 让 ACR 自动根据仓库里的 [Dockerfile](/D:/AI_projects/codex_project/test04/apps/api/Dockerfile) 构建镜像
+4. ECS 上只执行 `docker compose pull` 和 `docker compose up -d`
+
+服务器侧命令会变成：
+
+```bash
+export API_IMAGE=registry.cn-hangzhou.aliyuncs.com/<namespace>/knowledge-rss-api:latest
+docker compose pull api
+docker compose up -d api
+```
+
+这样做的好处：
+
+- ECS 不再承担跨境拉基础镜像和依赖下载的成本
+- 服务器只从阿里云 ACR 拉最终镜像，通常会稳定得多
+- 版本管理也更清晰，后面你做回滚会更轻松
+
+如果你在 ACR 中直接绑定 GitHub 作为代码源，阿里云官方文档里提到：
+
+- 可以开启“代码变更时自动构建镜像”
+- 如果代码源在中国大陆以外，可以按需开启“使用中国大陆以外服务器构建”
+- “Build Without Cache” 建议关闭，否则每次都重新拉基础镜像，构建会更慢
+
+对你当前的 GitHub 场景，我的建议是：
+
+- 先试 ACR 自动构建
+- 如果 ACR 拉 GitHub 偶尔慢，再根据实际情况决定是否开启海外构建
+- ECS 侧始终只做 `pull + up -d`
 
 ### 4.5 手动触发一次抓取测试
 
@@ -373,3 +449,4 @@ compatibility_flags = ["nodejs_compat", "global_fetch_strictly_public"]
 7. 最后再配置自定义域名和 Database Webhook
 
 这是当前项目最稳、最少绕路的方案。
+
