@@ -19,7 +19,7 @@ concurrency:
 
 env:
   ACR_REGISTRY: ${{ secrets.ACR_REGISTRY }}
-  ACR_REPOSITORY: my_github_projects/notesx
+  ACR_REPOSITORY: my_github_projects/knowledge-rss-api
 
 jobs:
   build-and-push:

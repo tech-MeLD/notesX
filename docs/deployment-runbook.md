@@ -34,15 +34,15 @@
 
 参考官方文档：
 
-- Supabase CLI `db push`：<https://supabase.com/docs/reference/cli/supabase-db-push>
-- Astro Cloudflare 部署：<https://docs.astro.build/zh-cn/guides/deploy/cloudflare/>
-- Cloudflare Node.js 兼容：<https://developers.cloudflare.com/workers/runtime-apis/nodejs/>
-- Cloudflare 本地环境变量：<https://developers.cloudflare.com/workers/local-development/environment-variables/>
-- Docker build context 与 `.dockerignore`：<https://docs.docker.com/build/building/context/>
-- Docker build cache：<https://docs.docker.com/build/cache/invalidation/>
-- 阿里云 ECS Docker 镜像加速：<https://help.aliyun.com/zh/ecs/use-cases/install-and-use-docker>
-- 阿里云 ACR 从代码仓库构建镜像：<https://www.alibabacloud.com/help/doc-detail/60997.html>
-- Astro Content Collections API：<https://docs.astro.build/reference/modules/astro-content/>
+- Supabase CLI `db push`：[https://supabase.com/docs/reference/cli/supabase-db-push](https://supabase.com/docs/reference/cli/supabase-db-push)
+- Astro Cloudflare 部署：[https://docs.astro.build/zh-cn/guides/deploy/cloudflare/](https://docs.astro.build/zh-cn/guides/deploy/cloudflare/)
+- Cloudflare Node.js 兼容：[https://developers.cloudflare.com/workers/runtime-apis/nodejs/](https://developers.cloudflare.com/workers/runtime-apis/nodejs/)
+- Cloudflare 本地环境变量：[https://developers.cloudflare.com/workers/local-development/environment-variables/](https://developers.cloudflare.com/workers/local-development/environment-variables/)
+- Docker build context 与 `.dockerignore`：[https://docs.docker.com/build/building/context/](https://docs.docker.com/build/building/context/)
+- Docker build cache：[https://docs.docker.com/build/cache/invalidation/](https://docs.docker.com/build/cache/invalidation/)
+- 阿里云 ECS Docker 镜像加速：[https://help.aliyun.com/zh/ecs/use-cases/install-and-use-docker](https://help.aliyun.com/zh/ecs/use-cases/install-and-use-docker)
+- 阿里云 ACR 从代码仓库构建镜像：[https://www.alibabacloud.com/help/doc-detail/60997.html](https://www.alibabacloud.com/help/doc-detail/60997.html)
+- Astro Content Collections API：[https://docs.astro.build/reference/modules/astro-content/](https://docs.astro.build/reference/modules/astro-content/)
 
 ## 2. 推送到 GitHub
 
@@ -112,8 +112,8 @@ supabase db push
 
 导入后，你会得到两个源：
 
-- Hacker News: <https://news.ycombinator.com/rss>
-- New York Times Home Page: <https://rss.nytimes.com/services/xml/rss/nyt/HomePage.xml>
+- Hacker News: [https://news.ycombinator.com/rss](https://news.ycombinator.com/rss)
+- New York Times Home Page: [https://rss.nytimes.com/services/xml/rss/nyt/HomePage.xml](https://rss.nytimes.com/services/xml/rss/nyt/HomePage.xml)
 
 ### 3.5 部署 Edge Function
 
@@ -147,7 +147,7 @@ supabase functions deploy rss-summary-ready --project-ref <your-project-ref>
 
 - `summary_status = completed`
 
-官方文档参考：<https://supabase.com/docs/guides/database/webhooks>
+官方文档参考：[https://supabase.com/docs/guides/database/webhooks](https://supabase.com/docs/guides/database/webhooks)
 
 ## 4. 部署后端 FastAPI
 
@@ -279,7 +279,9 @@ export API_PYTHON_IMAGE=registry.cn-hangzhou.aliyuncs.com/<namespace>/python:3.1
 服务器侧命令会变成：
 
 ```bash
-export API_IMAGE=registry.cn-hangzhou.aliyuncs.com/<namespace>/knowledge-rss-api:latest
+docker login --username <你的ACR用户名> crpi-2iyt4x8zo4oz9sv2.cn-hangzhou.personal.cr.aliyuncs.com
+export API_IMAGE=crpi-2iyt4x8zo4oz9sv2.cn-hangzhou.personal.cr.aliyuncs.com/my_github_projects/notesx:latest
+
 docker compose pull api
 docker compose up -d api
 ```
@@ -466,4 +468,3 @@ compatibility_flags = ["nodejs_compat", "global_fetch_strictly_public"]
 7. 最后再配置自定义域名和 Database Webhook
 
 这是当前项目最稳、最少绕路的方案。
-
