@@ -280,7 +280,7 @@ export API_PYTHON_IMAGE=registry.cn-hangzhou.aliyuncs.com/<namespace>/python:3.1
 
 ```bash
 docker login --username <你的ACR用户名> crpi-2iyt4x8zo4oz9sv2.cn-hangzhou.personal.cr.aliyuncs.com
-export API_IMAGE=crpi-2iyt4x8zo4oz9sv2.cn-hangzhou.personal.cr.aliyuncs.com/my_github_projects/notesx:latest
+export API_IMAGE=crpi-2iyt4x8zo4oz9sv2.cn-hangzhou.personal.cr.aliyuncs.com/my_github_projects/knowledge-rss-api:latest
 
 docker compose pull api
 docker compose up -d api
