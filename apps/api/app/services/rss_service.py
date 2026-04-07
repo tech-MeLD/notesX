@@ -646,9 +646,19 @@ async def run_summary_job(pool: asyncpg.Pool, entry_id: str) -> dict[str, str]:
     if not row:
         raise ValueError("Entry not found")
 
-    summarized = await _summarize_pending_rows(pool, [_serialize_row(row)])
-    if summarized:
+    await _summarize_pending_rows(pool, [_serialize_row(row)])
+
+    latest_status = await pool.fetchval(
+        """
+        select summary_status
+        from public.rss_entries
+        where id = $1::uuid
+        """,
+        entry_id,
+    )
+
+    if latest_status in {"completed", "failed"}:
         await invalidate_caches(pool)
         await refresh_hot_snapshot(pool)
-        return {"entry_id": entry_id, "summary_status": "completed"}
-    return {"entry_id": entry_id, "summary_status": "skipped"}
+
+    return {"entry_id": entry_id, "summary_status": latest_status or "skipped"}

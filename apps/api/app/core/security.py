@@ -49,8 +49,13 @@ class SupabaseTokenVerifier:
                 return self._jwks
 
     async def verify(self, token: str) -> dict[str, Any]:
-        jwks = await self._load_jwks()
-        header = jwt.get_unverified_header(token)
+        jwks = await _load_jwks_safely(self._load_jwks)
+
+        try:
+            header = jwt.get_unverified_header(token)
+        except InvalidTokenError as error:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid access token.") from error
+
         key = next((item for item in jwks.get("keys", []) if item.get("kid") == header.get("kid")), None)
 
         if not key:
@@ -72,6 +77,18 @@ class SupabaseTokenVerifier:
         return payload
 
 
+async def _load_jwks_safely(loader: Any) -> dict[str, Any]:
+    try:
+        return await loader()
+    except HTTPException:
+        raise
+    except Exception as error:  # noqa: BLE001
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Unable to verify access token right now.",
+        ) from error
+
+
 verifier = SupabaseTokenVerifier()
 
 
@@ -81,7 +98,10 @@ async def require_admin_access(
 ) -> AuthContext:
     admin_token = request.headers.get("x-admin-token")
     if settings.admin_api_token and admin_token == settings.admin_api_token:
-        return AuthContext(subject="admin-token", role="admin", raw={"method": "admin-token"})
+        return AuthContext(subject="admin-token", role="admin", raw={"method": "x-admin-token"})
+
+    if settings.admin_api_token and credentials and credentials.credentials == settings.admin_api_token:
+        return AuthContext(subject="admin-token", role="admin", raw={"method": "bearer-admin-token"})
 
     if not credentials:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing Bearer token.")
