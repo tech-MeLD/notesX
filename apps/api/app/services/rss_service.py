@@ -527,6 +527,10 @@ async def _fetch_single_source(
 
 
 async def _summarize_pending_rows(pool: asyncpg.Pool, rows: list[dict[str, Any]]) -> int:
+    unique_rows = [row for row in {row["id"]: row for row in rows if row.get("id")}.values()]
+    if not unique_rows:
+        return 0
+
     if not settings.ai_api_base_url or not settings.ai_api_key:
         return 0
 
@@ -586,9 +590,81 @@ async def _summarize_pending_rows(pool: asyncpg.Pool, rows: list[dict[str, Any]]
                 )
                 return False
 
-    unique_rows = {row["id"]: row for row in rows}.values()
     results = await asyncio.gather(*(worker(row) for row in unique_rows))
     return sum(1 for result in results if result)
+
+
+async def _repair_summary_state_mismatches(pool: asyncpg.Pool, *, entry_id: str | None = None) -> int:
+    repaired = await pool.fetchval(
+        """
+        with repaired as (
+            update public.rss_entries
+            set
+                summary_status = 'completed',
+                ai_model = coalesce(ai_model, $1),
+                ai_summary_completed_at = coalesce(ai_summary_completed_at, timezone('utc', now())),
+                summary_error = null,
+                score_hot = score_hot + 1.5,
+                updated_at = timezone('utc', now())
+            where coalesce(ai_summary, '') <> ''
+              and summary_status <> 'completed'
+              and ($2::uuid is null or id = $2::uuid)
+            returning 1
+        )
+        select count(*)::int
+        from repaired
+        """,
+        settings.ai_model,
+        entry_id,
+    )
+    return int(repaired or 0)
+
+
+async def _load_summary_recovery_rows(pool: asyncpg.Pool, *, limit: int) -> list[dict[str, Any]]:
+    if limit <= 0:
+        return []
+
+    rows = await pool.fetch(
+        """
+        select
+            id::text as id,
+            title,
+            content_text,
+            tags,
+            summary_status,
+            updated_at,
+            published_at
+        from public.rss_entries
+        where coalesce(ai_summary, '') = ''
+          and content_text is not null
+          and btrim(content_text) <> ''
+          and (
+                summary_status = 'pending'
+                or (
+                    summary_status = 'failed'
+                    and updated_at <= timezone('utc', now()) - ($1 * interval '1 minute')
+                )
+                or (
+                    summary_status = 'processing'
+                    and updated_at <= timezone('utc', now()) - ($2 * interval '1 minute')
+                )
+          )
+        order by
+            case summary_status
+                when 'pending' then 1
+                when 'failed' then 2
+                when 'processing' then 3
+                else 4
+            end,
+            updated_at asc,
+            published_at desc nulls last
+        limit $3
+        """,
+        settings.rss_summary_failed_retry_after_minutes,
+        settings.rss_summary_processing_timeout_minutes,
+        limit,
+    )
+    return [_serialize_row(row) for row in rows]
 
 
 async def run_ingestion_job(
@@ -598,38 +674,43 @@ async def run_ingestion_job(
     force: bool = False,
 ) -> dict[str, int]:
     sources = await _load_sources_for_ingestion(pool, source_ids=source_ids or [], force=force)
-    if not sources:
-        return {
-            "fetched_sources": 0,
-            "upserted_entries": 0,
-            "summarized_entries": 0,
-            "skipped_sources": 0,
-        }
-
-    semaphore = asyncio.Semaphore(settings.rss_max_parallel_fetches)
-    async with httpx.AsyncClient(timeout=settings.rss_feed_timeout_seconds, follow_redirects=True) as client:
-        async def guarded_fetch(source: asyncpg.Record) -> dict[str, Any]:
-            async with semaphore:
-                return await _fetch_single_source(pool, client, source)
-
-        results = await asyncio.gather(*(guarded_fetch(source) for source in sources))
 
     pending_rows: list[dict[str, Any]] = []
     upserted_entries = 0
     skipped_sources = 0
-    for result in results:
-        upserted_entries += result["upserted"]
-        skipped_sources += result["skipped"]
-        pending_rows.extend(result["pending"])
+
+    if sources:
+        semaphore = asyncio.Semaphore(settings.rss_max_parallel_fetches)
+        async with httpx.AsyncClient(timeout=settings.rss_feed_timeout_seconds, follow_redirects=True) as client:
+            async def guarded_fetch(source: asyncpg.Record) -> dict[str, Any]:
+                async with semaphore:
+                    return await _fetch_single_source(pool, client, source)
+
+            results = await asyncio.gather(*(guarded_fetch(source) for source in sources))
+
+        for result in results:
+            upserted_entries += result["upserted"]
+            skipped_sources += result["skipped"]
+            pending_rows.extend(result["pending"])
 
     summarized_entries = await _summarize_pending_rows(pool, pending_rows)
-    await invalidate_caches(pool)
-    await refresh_hot_snapshot(pool)
+    repaired_entries = await _repair_summary_state_mismatches(pool)
+    recovery_rows = await _load_summary_recovery_rows(
+        pool,
+        limit=settings.rss_summary_recovery_batch_size,
+    )
+    recovered_entries = await _summarize_pending_rows(pool, recovery_rows)
+
+    if upserted_entries or summarized_entries or repaired_entries or recovered_entries:
+        await invalidate_caches(pool)
+        await refresh_hot_snapshot(pool)
 
     return {
         "fetched_sources": len(sources),
         "upserted_entries": upserted_entries,
         "summarized_entries": summarized_entries,
+        "recovered_entries": recovered_entries,
+        "repaired_entries": repaired_entries,
         "skipped_sources": skipped_sources,
     }
 
@@ -637,7 +718,7 @@ async def run_ingestion_job(
 async def run_summary_job(pool: asyncpg.Pool, entry_id: str) -> dict[str, str]:
     row = await pool.fetchrow(
         """
-        select id::text as id, title, content_text, tags
+        select id::text as id, title, content_text, tags, ai_summary, summary_status
         from public.rss_entries
         where id = $1::uuid
         """,
@@ -646,7 +727,22 @@ async def run_summary_job(pool: asyncpg.Pool, entry_id: str) -> dict[str, str]:
     if not row:
         raise ValueError("Entry not found")
 
-    await _summarize_pending_rows(pool, [_serialize_row(row)])
+    payload = _serialize_row(row)
+    repaired_entries = 0
+
+    if payload.get("ai_summary") and payload.get("summary_status") != "completed":
+        repaired_entries = await _repair_summary_state_mismatches(pool, entry_id=entry_id)
+    elif payload.get("summary_status") != "completed" and payload.get("content_text"):
+        await _summarize_pending_rows(pool, [payload])
+    elif payload.get("summary_status") != "completed":
+        await pool.execute(
+            """
+            update public.rss_entries
+            set summary_status = 'skipped', updated_at = timezone('utc', now())
+            where id = $1::uuid
+            """,
+            entry_id,
+        )
 
     latest_status = await pool.fetchval(
         """
@@ -657,7 +753,7 @@ async def run_summary_job(pool: asyncpg.Pool, entry_id: str) -> dict[str, str]:
         entry_id,
     )
 
-    if latest_status in {"completed", "failed"}:
+    if latest_status in {"completed", "failed", "skipped"} or repaired_entries:
         await invalidate_caches(pool)
         await refresh_hot_snapshot(pool)
 

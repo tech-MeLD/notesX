@@ -71,6 +71,8 @@ class IngestionJobResponse(BaseModel):
     fetched_sources: int
     upserted_entries: int
     summarized_entries: int
+    recovered_entries: int = 0
+    repaired_entries: int = 0
     skipped_sources: int = 0
 
 

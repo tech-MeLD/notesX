@@ -8,8 +8,9 @@ from app.core.config import settings
 
 
 SUMMARY_SYSTEM_PROMPT = (
-    "你是知识站点的资讯编辑。请基于给定内容生成中文摘要，保持客观、信息密度高、"
-    "适合网页卡片展示。输出 2 到 4 句，不要使用项目符号。"
+    "You are an editor for a personal knowledge website. "
+    "Write a concise Chinese summary in 2-4 sentences. "
+    "Keep the key facts, avoid hype, and do not invent details."
 )
 
 
@@ -30,9 +31,9 @@ async def summarize_entry(entry: Mapping[str, Any]) -> str | None:
             {
                 "role": "user",
                 "content": (
-                    f"标题：{entry.get('title', 'Untitled')}\n"
-                    f"标签：{', '.join(entry.get('tags', []))}\n"
-                    f"正文：\n{truncated}"
+                    f"Title: {entry.get('title', 'Untitled')}\n"
+                    f"Tags: {', '.join(entry.get('tags', [])) or 'None'}\n"
+                    f"Content:\n{truncated}"
                 ),
             },
         ],
@@ -49,7 +50,11 @@ async def summarize_entry(entry: Mapping[str, Any]) -> str | None:
         response.raise_for_status()
         data = response.json()
 
-    message = data["choices"][0]["message"]["content"]
+    choices = data.get("choices") or []
+    if not choices:
+        return None
+
+    message = choices[0].get("message", {}).get("content")
     if isinstance(message, list):
         return "".join(part.get("text", "") for part in message).strip() or None
     return str(message).strip() or None

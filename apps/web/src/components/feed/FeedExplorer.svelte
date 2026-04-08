@@ -47,6 +47,26 @@
   const supabaseUrl = import.meta.env.PUBLIC_SUPABASE_URL;
   const supabaseAnonKey = import.meta.env.PUBLIC_SUPABASE_ANON_KEY;
 
+  function hasReadySummary(entry: RssEntry): boolean {
+    return Boolean(entry.ai_summary?.trim()) || entry.summary_status === "completed";
+  }
+
+  function getSummaryLabel(entry: RssEntry): string {
+    if (hasReadySummary(entry)) {
+      return "AI summary ready";
+    }
+
+    if (entry.summary_status === "failed") {
+      return "Summary failed, retry pending";
+    }
+
+    if (entry.summary_status === "skipped") {
+      return "No summary needed";
+    }
+
+    return "Waiting for summary";
+  }
+
   async function reload() {
     loading = true;
     error = "";
@@ -64,13 +84,13 @@
       });
 
       if (!response.ok) {
-        throw new Error(`加载失败：${response.status}`);
+        throw new Error(`Failed to load RSS entries: ${response.status}`);
       }
 
       const payload = (await response.json()) as { items: RssEntry[] };
       entries = payload.items;
     } catch (fetchError) {
-      error = fetchError instanceof Error ? fetchError.message : "读取 RSS 数据失败";
+      error = fetchError instanceof Error ? fetchError.message : "Failed to load RSS entries";
     } finally {
       loading = false;
     }
@@ -127,7 +147,7 @@
           void reload();
         }}
       >
-        热度排序
+        Hot
       </button>
       <button
         class:active-pill={sort === "latest"}
@@ -138,7 +158,7 @@
           void reload();
         }}
       >
-        最新发布
+        Latest
       </button>
     </div>
 
@@ -152,7 +172,7 @@
           void reload();
         }}
       >
-        全部标签
+        All tags
       </button>
 
       {#each initialTags as bucket}
@@ -183,7 +203,7 @@
       <article class="rounded-[1.75rem] border border-black/8 bg-white/70 p-5 shadow-[0_18px_48px_rgba(30,32,36,0.06)]">
         <div class="flex flex-wrap items-center gap-3 text-xs uppercase tracking-[0.18em] text-[var(--muted)]">
           <span>{entry.source_title}</span>
-          <span>{entry.published_at ? new Intl.DateTimeFormat("zh-CN", { month: "short", day: "numeric" }).format(new Date(entry.published_at)) : "待定"}</span>
+          <span>{entry.published_at ? new Intl.DateTimeFormat("zh-CN", { month: "short", day: "numeric" }).format(new Date(entry.published_at)) : "TBD"}</span>
           <span>Hot {entry.score_hot.toFixed(1)}</span>
         </div>
 
@@ -203,9 +223,9 @@
           </div>
 
           <div class="flex items-center justify-between text-xs text-[var(--muted)]">
-            <span>{entry.summary_status === "completed" ? "AI 摘要已就绪" : "等待摘要生成"}</span>
+            <span>{getSummaryLabel(entry)}</span>
             <a class="font-semibold text-[var(--accent)]" href={entry.url} target="_blank" rel="noreferrer">
-              阅读原文 →
+              Read source
             </a>
           </div>
         </div>
@@ -214,7 +234,7 @@
   </div>
 
   {#if loading}
-    <p class="text-sm text-[var(--muted)]">正在刷新 RSS 数据…</p>
+    <p class="text-sm text-[var(--muted)]">Refreshing RSS entries...</p>
   {/if}
 </section>
 

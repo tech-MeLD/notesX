@@ -34,6 +34,9 @@ class Settings(BaseSettings):
     rss_max_parallel_fetches: int = 6
     rss_max_parallel_summaries: int = 4
     rss_summary_max_chars: int = 6000
+    rss_summary_recovery_batch_size: int = 24
+    rss_summary_failed_retry_after_minutes: int = 60
+    rss_summary_processing_timeout_minutes: int = 20
 
     db_pool_min_size: int = 1
     db_pool_max_size: int = 8
