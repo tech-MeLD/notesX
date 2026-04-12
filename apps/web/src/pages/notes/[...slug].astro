@@ -3,7 +3,7 @@ export const prerender = true;
 
 import { getCollection, render } from "astro:content";
 import BaseLayout from "../../layouts/BaseLayout.astro";
-import { formatDate, noteIdToUrl } from "../../lib/notes";
+import { formatDate } from "../../lib/notes";
 
 export async function getStaticPaths() {
   const entries = await getCollection("notes", ({ data }) => !data.draft);
@@ -24,7 +24,7 @@ const { Content, headings } = await render(entry);
       <div class="max-w-3xl">
         <div class="flex flex-wrap gap-3 text-xs uppercase tracking-[0.2em] text-[var(--muted)]">
           <span>{formatDate(entry.data.updatedAt ?? entry.data.createdAt)}</span>
-          <span>{entry.data.tags.join(" / ") || "未分类"}</span>
+          <span>{entry.data.tags.join(" / ") || "\u672a\u5206\u7c7b"}</span>
         </div>
 
         <h1 class="mt-4 font-display text-5xl leading-tight text-[var(--ink)]">{entry.data.title}</h1>
@@ -38,11 +38,11 @@ const { Content, headings } = await render(entry);
 
     <aside class="lg:sticky lg:top-24 lg:h-fit">
       <div class="rounded-[1.5rem] border border-black/8 bg-white/70 p-5">
-        <p class="text-xs uppercase tracking-[0.2em] text-[var(--muted)]">目录</p>
+        <p class="text-xs uppercase tracking-[0.2em] text-[var(--muted)]">&#30446;&#24405;</p>
         <ul class="mt-4 space-y-3 text-sm text-[var(--muted)]">
           {headings.map((heading) => (
             <li>
-              <a class="transition hover:text-[var(--accent)]" href={`${noteIdToUrl(entry.id)}#${heading.slug}`}>
+              <a class="transition hover:text-[var(--accent)]" href={`#${heading.slug}`}>
                 {heading.text}
               </a>
             </li>
@@ -51,4 +51,64 @@ const { Content, headings } = await render(entry);
       </div>
     </aside>
   </article>
+
+  <script is:inline>
+    (() => {
+      const root = document.querySelector(".note-content");
+      if (!root) return;
+
+      const copyLabel = "\u590d\u5236";
+      const copiedLabel = "\u5df2\u590d\u5236";
+      const failedLabel = "\u590d\u5236\u5931\u8d25";
+
+      const getLanguage = (codeElement) => {
+        const className = Array.from(codeElement.classList).find((value) => value.startsWith("language-"));
+        if (!className) return "TEXT";
+        return className.replace("language-", "").replace(/[-_]/g, " ").toUpperCase();
+      };
+
+      const attachCopyToolbar = (preElement) => {
+        if (preElement.dataset.enhanced === "true") return;
+
+        const codeElement = preElement.querySelector("code");
+        if (!codeElement) return;
+
+        preElement.dataset.enhanced = "true";
+
+        const toolbar = document.createElement("div");
+        toolbar.className = "note-code-toolbar";
+
+        const language = document.createElement("span");
+        language.className = "note-code-language";
+        language.textContent = getLanguage(codeElement);
+
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "note-code-copy";
+        button.textContent = copyLabel;
+        button.setAttribute("aria-label", "Copy code block");
+
+        button.addEventListener("click", async () => {
+          const code = codeElement.innerText.replace(/\n$/, "");
+
+          try {
+            await navigator.clipboard.writeText(code);
+            button.textContent = copiedLabel;
+          } catch (error) {
+            console.error("Failed to copy code block", error);
+            button.textContent = failedLabel;
+          }
+
+          window.setTimeout(() => {
+            button.textContent = copyLabel;
+          }, 1600);
+        });
+
+        toolbar.append(language, button);
+        preElement.prepend(toolbar);
+      };
+
+      root.querySelectorAll("pre").forEach((preElement) => attachCopyToolbar(preElement));
+    })();
+  </script>
 </BaseLayout>
