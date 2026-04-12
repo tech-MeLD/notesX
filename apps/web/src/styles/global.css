@@ -44,22 +44,42 @@ body {
   margin-top: 1.2rem;
 }
 
+.note-content h1,
 .note-content h2,
 .note-content h3,
-.note-content h4 {
+.note-content h4,
+.note-content h5,
+.note-content h6 {
   font-family: var(--font-display);
   color: var(--ink);
   line-height: 1.2;
+  font-weight: 600;
   margin-top: 2.4rem;
   scroll-margin-top: 6rem;
 }
 
+.note-content h1 {
+  font-size: 2.2rem;
+}
+
 .note-content h2 {
-  font-size: 2rem;
+  font-size: 1.9rem;
 }
 
 .note-content h3 {
   font-size: 1.5rem;
+}
+
+.note-content h4 {
+  font-size: 1.28rem;
+}
+
+.note-content h5 {
+  font-size: 1.1rem;
+}
+
+.note-content h6 {
+  font-size: 1rem;
 }
 
 .note-content a {
