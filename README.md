@@ -7,6 +7,7 @@
 - 后端：`FastAPI + async RSS ingestion + AI summary`
 - 数据层：`Supabase PostgreSQL + Realtime + Edge Functions`
 - 部署：前端 Cloudflare，后端 Docker 部署到云服务器
+- 鉴权：`Supabase Auth (GitHub OAuth + Email Magic Link)`
 
 ## 目录
 
@@ -71,6 +72,12 @@
 - Obsidian 笔记保持 Markdown 作为单一内容源，导入后进入 Astro Content Collections
 - RSS 数据实时落到 Supabase PostgreSQL，默认通过 UNLOGGED 缓存表做短时查询缓存
 - FastAPI 负责异步抓取、聚合、标签过滤、热度计算与 AI 摘要
+- RSS 只展示并保留最近 30 天的数据，超出窗口的数据会在抓取后和定时任务中清理
+- 标签筛选只展示最近 30 天内出现次数大于等于 5 的标签
+- 用户登录使用 Supabase Auth，支持 GitHub 登录和邮箱魔法链接登录
+- 收藏功能使用 `public.user_source_favorites` + RLS，用户只能看到自己的收藏订阅源，且单用户最多 50 个收藏
+- 数据库层通过触发器限制站点总注册用户数最多为 20 个
+- `pg_cron` 会定期清理缓存表，并每天执行一次 RSS 过期数据清理
 - Supabase Edge Function 接数据库 webhook，把摘要完成事件写入 `rss_live_events`，前端通过 Realtime 订阅更新
 
 详细说明见 [architecture.md](/D:/AI_projects/codex_project/test04/docs/architecture.md) 和 [deployment-runbook.md](/D:/AI_projects/codex_project/test04/docs/deployment-runbook.md)。

@@ -26,5 +26,5 @@ try {
     </p>
   </section>
 
-  <FeedExplorer client:load apiBaseUrl={apiBaseUrl} initialEntries={feedPayload.items} initialTags={tags} />
+  <FeedExplorer client:load apiBaseUrl={apiBaseUrl} initialEntries={feedPayload.items} initialTags={tags} pageSize={12} />
 </BaseLayout>

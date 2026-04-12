@@ -94,7 +94,18 @@ supabase link --project-ref <your-project-ref>
 supabase db push
 ```
 
-这一步会把 [20260404170000_initial_schema.sql](/D:/AI_projects/codex_project/test04/supabase/migrations/20260404170000_initial_schema.sql) 推到远端数据库。
+这一步会把 `supabase/migrations` 目录里的所有 migration 推到远端数据库，包括：
+
+- [20260404170000_initial_schema.sql](/D:/AI_projects/codex_project/test04/supabase/migrations/20260404170000_initial_schema.sql)
+- [20260412103000_rss_retention_auth_favorites.sql](/D:/AI_projects/codex_project/test04/supabase/migrations/20260412103000_rss_retention_auth_favorites.sql)
+
+第二个 migration 会额外完成这几件事：
+
+- 创建 `public.user_source_favorites`
+- 开启这张表的 RLS 策略
+- 限制站点总注册用户数为 20
+- 限制单用户最多收藏 50 个 RSS 源
+- 开启 `pg_cron` 并定期清理缓存表和 30 天外的 RSS 数据
 
 ### 3.4 导入测试 RSS 源
 
@@ -134,7 +145,32 @@ supabase functions deploy rss-summary-ready --project-ref <your-project-ref>
 - `SUPABASE_URL`
 - `SUPABASE_SERVICE_ROLE_KEY`
 
-### 3.7 创建 Database Webhook
+### 3.7 配置 Supabase Auth
+
+当前前端登录只走 Supabase Auth，不额外引入自建认证服务。
+
+在 Supabase Dashboard -> Authentication -> Providers 中：
+
+1. 开启 `GitHub`
+2. 保持 `Email` 可用
+
+GitHub Provider 需要在 GitHub OAuth App 中配置回调地址，通常填：
+
+```text
+https://<project-ref>.supabase.co/auth/v1/callback
+```
+
+然后在 Supabase Dashboard -> Authentication -> URL Configuration 中补齐站点地址：
+
+- `Site URL`: 你的前端正式域名，例如 `https://notes.example.com`
+- `Redirect URLs`:
+  - `http://127.0.0.1:4321`
+  - `http://localhost:4321`
+  - `https://<your-frontend-domain>`
+
+如果你后续使用 Cloudflare 预览域名，也把对应预览域名加进去。
+
+### 3.8 创建 Database Webhook
 
 在 Supabase Dashboard 中创建一个 Database Webhook：
 
@@ -185,6 +221,7 @@ Copy-Item apps/api/.env.example apps/api/.env
 
 - 如果你只想先验证 RSS 抓取链路，可以先不填 `AI_API_KEY`，这样摘要会跳过，但抓取和聚合仍然可以跑。
 - `ADMIN_API_TOKEN` 用于手动触发抓取任务时保护管理接口。
+- `PUBLIC_SITE_URL` 和前端最终域名保持一致，这样 GitHub OAuth 与邮箱 Magic Link 回跳地址才会稳定。
 
 ### 4.3 本地启动后端验证
 
@@ -321,6 +358,7 @@ curl -X POST http://127.0.0.1:8000/api/v1/rss-fetch-jobs \
 - `rss_entries` 出现新数据
 - 如果配置了 AI，则部分条目 `summary_status` 会变成 `completed`
 - `rss_live_events` 会收到 Edge Function 写入的事件
+- 前端 `/rss` 页面只会展示最近 30 天的条目，标签筛选只展示出现次数大于等于 5 的标签
 
 ## 5. 部署前端到 Cloudflare
 
@@ -361,6 +399,7 @@ Copy-Item apps/web/.env.example apps/web/.env
 - 你现在采用的是“本地 build，再用 Wrangler deploy”的最小方案，所以前端部署时直接读取本地 `apps/web/.env`
 - 这几个 `PUBLIC_*` 值会在构建阶段注入到前端，不需要额外放进 Worker Secret
 - 如果你后面改成 Cloudflare Workers Builds 或 GitHub 自动部署，再把同样的 `PUBLIC_*` 变量配置到 Cloudflare 的构建环境即可
+- 这两个 Supabase 公共变量同时也是前端登录和收藏功能的必填项
 
 ### 5.2 同步 Obsidian 内容
 
@@ -452,8 +491,10 @@ compatibility_flags = ["nodejs_compat", "global_fetch_strictly_public"]
 2. 打开 Supabase，确认 `rss_sources` 里已经有两条测试源
 3. 调用一次 `POST /api/v1/rss-fetch-jobs`
 4. 确认 `rss_entries` 已写入数据
-5. 打开前端 `/rss` 页面，确认能看到 HN 和 NYT 内容
-6. 如果配了 AI，再确认 `rss_live_events` 会随着摘要完成持续写入
+5. 打开前端 `/rss` 页面，确认能看到 HN 和 NYT 最近 30 天内的内容
+6. 点击顶部登录按钮，确认 GitHub 登录和邮箱登录都能正常回跳
+7. 登录后收藏一个订阅源，确认只在当前账户下可见
+8. 如果配了 AI，再确认 `rss_live_events` 会随着摘要完成持续写入
 
 ## 8. 你现在最推荐的最小上线顺序
 

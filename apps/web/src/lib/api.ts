@@ -17,6 +17,21 @@ export interface RssEntry {
   score_hot: number;
 }
 
+export interface RssSource {
+  id: string;
+  slug: string;
+  title: string;
+  feed_url: string;
+  site_url: string | null;
+  tags: string[];
+  source_priority: number;
+  fetch_interval_minutes: number;
+  is_active: boolean;
+  last_fetched_at: string | null;
+  last_fetch_status: string | null;
+  last_fetch_error: string | null;
+}
+
 export interface RssEntryListResponse {
   items: RssEntry[];
   total: number;
@@ -53,7 +68,8 @@ export async function fetchRssEntries(options?: {
   });
 
   const response = await fetch(url, {
-    headers: { accept: "application/json" }
+    headers: { accept: "application/json" },
+    cache: "no-store"
   });
 
   if (!response.ok) {
@@ -65,7 +81,8 @@ export async function fetchRssEntries(options?: {
 
 export async function fetchRssTags() {
   const response = await fetch(buildApiUrl("/api/v1/rss-tags"), {
-    headers: { accept: "application/json" }
+    headers: { accept: "application/json" },
+    cache: "no-store"
   });
 
   if (!response.ok) {
@@ -73,4 +90,17 @@ export async function fetchRssTags() {
   }
 
   return (await response.json()) as TagBucket[];
+}
+
+export async function fetchRssSources() {
+  const response = await fetch(buildApiUrl("/api/v1/rss-sources"), {
+    headers: { accept: "application/json" },
+    cache: "no-store"
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to load RSS sources: ${response.status}`);
+  }
+
+  return (await response.json()) as RssSource[];
 }

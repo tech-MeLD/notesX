@@ -66,6 +66,7 @@ docs/
 - `public.rss_sources`：RSS 源配置、拉取间隔、ETag、最后一次状态
 - `public.rss_entries`：聚合后的条目、标签、热度分数、摘要状态
 - `public.rss_live_events`：前端 Realtime 订阅的轻量事件表
+- `public.user_source_favorites`：用户收藏的订阅源，开启 RLS 后只允许用户访问自己的记录
 
 ### UNLOGGED 缓存表
 
@@ -79,6 +80,24 @@ docs/
 - crash 后自动丢失也没关系，因为可以重新计算
 
 注意：UNLOGGED 表不适合存放核心业务数据，所以这里只缓存可重建的派生结果。
+
+### 鉴权与权限边界
+
+- 前端登录统一使用 Supabase Auth，当前支持两种轻量登录方式：
+  - GitHub OAuth
+  - 邮箱 Magic Link
+- 收藏功能不走额外后端中转，前端直接通过 Supabase 客户端访问 `public.user_source_favorites`。
+- 这张收藏表由 RLS 保护，策略限制为“只能读写自己的收藏”。
+- 数据库触发器同时限制：
+  - 站点总注册用户最多 20 个
+  - 单个用户最多收藏 50 个 RSS 源
+
+### RSS 保留策略
+
+- API 查询层默认只返回最近 30 天内的 RSS 条目。
+- 抓取任务每次完成后会顺手裁剪超过 30 天的旧条目，避免数据越积越多。
+- `pg_cron` 继续每天执行一次兜底清理，保证数据库和缓存表不会长期堆积。
+- 标签聚合同样只统计最近 30 天内的数据，并且只返回出现次数大于等于 5 的标签，避免前端筛选过碎。
 
 ## Edge Function 链路
 

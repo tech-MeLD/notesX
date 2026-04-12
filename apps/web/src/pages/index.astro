@@ -100,6 +100,6 @@ try {
       </a>
     </div>
 
-    <FeedExplorer client:load apiBaseUrl={apiBaseUrl} initialEntries={feedPayload.items} initialTags={tags} />
+    <FeedExplorer client:load apiBaseUrl={apiBaseUrl} initialEntries={feedPayload.items} initialTags={tags} pageSize={6} />
   </section>
 </BaseLayout>

@@ -25,6 +25,8 @@ logger = logging.getLogger(__name__)
 whitespace_re = re.compile(r"\s+")
 html_tag_re = re.compile(r"<[^>]+>")
 slug_char_re = re.compile(r"[^a-z0-9]+")
+RSS_RETENTION_DAYS = 30
+RSS_TAG_MIN_COUNT = 5
 
 
 def _slugify(value: str) -> str:
@@ -97,6 +99,21 @@ async def invalidate_caches(pool: asyncpg.Pool) -> None:
     await pool.execute("delete from cache.hot_snapshots")
 
 
+async def trim_expired_entries(pool: asyncpg.Pool) -> int:
+    deleted_count = await pool.fetchval(
+        f"""
+        with deleted as (
+            delete from public.rss_entries
+            where coalesce(published_at, fetched_at) < timezone('utc', now()) - interval '{RSS_RETENTION_DAYS} days'
+            returning 1
+        )
+        select count(*)::int
+        from deleted
+        """
+    )
+    return int(deleted_count or 0)
+
+
 async def list_sources(pool: asyncpg.Pool) -> list[dict[str, Any]]:
     rows = await pool.fetch(
         """
@@ -114,6 +131,7 @@ async def list_sources(pool: asyncpg.Pool) -> list[dict[str, Any]]:
             last_fetch_status,
             last_fetch_error
         from public.rss_sources
+        where is_active = true
         order by source_priority desc, title asc
         """
     )
@@ -168,7 +186,10 @@ async def _query_entries(
     limit: int,
     offset: int,
 ) -> dict[str, Any]:
-    conditions = ["s.is_active = true"]
+    conditions = [
+        "s.is_active = true",
+        f"coalesce(e.published_at, e.fetched_at) >= timezone('utc', now()) - interval '{RSS_RETENTION_DAYS} days'",
+    ]
     params: list[Any] = []
 
     if tag:
@@ -275,7 +296,7 @@ async def list_entries(
 
 async def get_entry(pool: asyncpg.Pool, entry_id: str) -> dict[str, Any] | None:
     row = await pool.fetchrow(
-        """
+        f"""
         select
             e.id::text as id,
             e.source_id::text as source_id,
@@ -296,6 +317,8 @@ async def get_entry(pool: asyncpg.Pool, entry_id: str) -> dict[str, Any] | None:
         from public.rss_entries e
         join public.rss_sources s on s.id = e.source_id
         where e.id = $1::uuid
+          and s.is_active = true
+          and coalesce(e.published_at, e.fetched_at) >= timezone('utc', now()) - interval '{RSS_RETENTION_DAYS} days'
         """,
         entry_id,
     )
@@ -304,14 +327,18 @@ async def get_entry(pool: asyncpg.Pool, entry_id: str) -> dict[str, Any] | None:
 
 async def list_tags(pool: asyncpg.Pool) -> list[dict[str, Any]]:
     rows = await pool.fetch(
-        """
+        f"""
         select tag, count(*)::int as count
         from (
             select unnest(tags) as tag
-            from public.rss_entries
+            from public.rss_entries e
+            join public.rss_sources s on s.id = e.source_id
+            where s.is_active = true
+              and coalesce(e.published_at, e.fetched_at) >= timezone('utc', now()) - interval '{RSS_RETENTION_DAYS} days'
         ) tag_values
         where tag is not null and tag <> ''
         group by tag
+        having count(*) >= {RSS_TAG_MIN_COUNT}
         order by count desc, tag asc
         """
     )
@@ -596,7 +623,7 @@ async def _summarize_pending_rows(pool: asyncpg.Pool, rows: list[dict[str, Any]]
 
 async def _repair_summary_state_mismatches(pool: asyncpg.Pool, *, entry_id: str | None = None) -> int:
     repaired = await pool.fetchval(
-        """
+        f"""
         with repaired as (
             update public.rss_entries
             set
@@ -608,6 +635,7 @@ async def _repair_summary_state_mismatches(pool: asyncpg.Pool, *, entry_id: str 
                 updated_at = timezone('utc', now())
             where coalesce(ai_summary, '') <> ''
               and summary_status <> 'completed'
+              and coalesce(published_at, fetched_at) >= timezone('utc', now()) - interval '{RSS_RETENTION_DAYS} days'
               and ($2::uuid is null or id = $2::uuid)
             returning 1
         )
@@ -625,7 +653,7 @@ async def _load_summary_recovery_rows(pool: asyncpg.Pool, *, limit: int) -> list
         return []
 
     rows = await pool.fetch(
-        """
+        f"""
         select
             id::text as id,
             title,
@@ -638,6 +666,7 @@ async def _load_summary_recovery_rows(pool: asyncpg.Pool, *, limit: int) -> list
         where coalesce(ai_summary, '') = ''
           and content_text is not null
           and btrim(content_text) <> ''
+          and coalesce(published_at, fetched_at) >= timezone('utc', now()) - interval '{RSS_RETENTION_DAYS} days'
           and (
                 summary_status = 'pending'
                 or (
@@ -700,8 +729,9 @@ async def run_ingestion_job(
         limit=settings.rss_summary_recovery_batch_size,
     )
     recovered_entries = await _summarize_pending_rows(pool, recovery_rows)
+    trimmed_entries = await trim_expired_entries(pool)
 
-    if upserted_entries or summarized_entries or repaired_entries or recovered_entries:
+    if upserted_entries or summarized_entries or repaired_entries or recovered_entries or trimmed_entries:
         await invalidate_caches(pool)
         await refresh_hot_snapshot(pool)
 
