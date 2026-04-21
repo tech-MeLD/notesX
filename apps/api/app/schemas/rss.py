@@ -15,6 +15,7 @@ class RssSourceBase(BaseModel):
     title: str
     feed_url: str
     site_url: str | None = None
+    category: str = "technology"
     tags: list[str] = Field(default_factory=list)
     source_priority: int = 1
     fetch_interval_minutes: int = 30
@@ -37,6 +38,7 @@ class RssEntry(BaseModel):
     source_id: str
     source_slug: str
     source_title: str
+    source_category: str
     title: str
     url: str
     author: str | None = None

@@ -10,7 +10,9 @@
   let notice = "";
   let error = "";
   let panelOpen = false;
+  let cooldownSeconds = 0;
   let unsubscribe = () => {};
+  let cooldownTimer: ReturnType<typeof setInterval> | null = null;
 
   const supabase = getBrowserSupabase();
 
@@ -95,11 +97,17 @@
     loading = false;
 
     if (authError) {
-      error = authError.message;
+      const normalizedMessage = authError.message.toLowerCase();
+      if (normalizedMessage.includes("rate limit")) {
+        error = "邮箱发送过于频繁。Supabase 默认对同一邮箱有 60 秒冷却，内置邮件服务也有项目级限流。";
+      } else {
+        error = authError.message;
+      }
       return;
     }
 
-    notice = "登录链接已发送，请检查邮箱。";
+    cooldownSeconds = 60;
+    notice = "登录邮件已发送，请使用最新一封邮件中的链接完成登录。旧链接会失效。";
     email = "";
   }
 
@@ -142,14 +150,23 @@
       if (nextSession) {
         error = "";
         notice = "登录成功。";
+        cooldownSeconds = 0;
       }
     });
 
     unsubscribe = () => data.subscription.unsubscribe();
+    cooldownTimer = window.setInterval(() => {
+      if (cooldownSeconds > 0) {
+        cooldownSeconds -= 1;
+      }
+    }, 1000);
   });
 
   onDestroy(() => {
     unsubscribe();
+    if (cooldownTimer) {
+      clearInterval(cooldownTimer);
+    }
   });
 </script>
 
@@ -172,7 +189,9 @@
         <div class="space-y-4">
           <div class="space-y-2">
             <p class="text-sm font-semibold text-[var(--ink)]">登录后可收藏订阅源</p>
-            <p class="text-sm leading-6 text-[var(--muted)]">支持 GitHub 登录和邮箱魔法链接登录。</p>
+            <p class="text-sm leading-6 text-[var(--muted)]">
+              支持 GitHub 登录和邮箱登录。邮箱链接为单次有效，重新发送后请只使用最新邮件。
+            </p>
           </div>
 
           <button class="header-auth-primary" type="button" on:click={signInWithGitHub} disabled={loading}>
@@ -188,8 +207,12 @@
               autocomplete="email"
               placeholder="name@example.com"
             />
-            <button class="header-auth-secondary" type="submit" disabled={loading}>
-              发送邮箱登录链接
+            <button class="header-auth-secondary" type="submit" disabled={loading || cooldownSeconds > 0}>
+              {#if cooldownSeconds > 0}
+                {cooldownSeconds} 秒后可重发
+              {:else}
+                发送邮箱登录链接
+              {/if}
             </button>
           </form>
         </div>

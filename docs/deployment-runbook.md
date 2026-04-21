@@ -5,7 +5,7 @@
 - 前端部署到 Cloudflare
 - 后端 FastAPI 部署到你的云服务器 Docker
 - 数据与鉴权交给 Supabase
-- 初始 RSS 测试源直接导入
+- 初始 RSS 源直接导入
 - 不额外引入 Redis、消息队列、K8s 等复杂组件
 
 ## 0. 你最终会得到什么
@@ -14,7 +14,7 @@
 2. 一个 Supabase 项目
 3. 一个运行 FastAPI 的云服务器容器
 4. 一个部署到 Cloudflare 的 Astro 前端
-5. 两个已经可用的 RSS 测试源：Hacker News、New York Times
+5. 一组按类目分好的 RSS 源：科技、金融、经济
 
 ## 1. 本地准备
 
@@ -98,6 +98,7 @@ supabase db push
 
 - [20260404170000_initial_schema.sql](/D:/AI_projects/codex_project/test04/supabase/migrations/20260404170000_initial_schema.sql)
 - [20260412103000_rss_retention_auth_favorites.sql](/D:/AI_projects/codex_project/test04/supabase/migrations/20260412103000_rss_retention_auth_favorites.sql)
+- [20260421110000_rss_catalog_and_ai_tags.sql](/D:/AI_projects/codex_project/test04/supabase/migrations/20260421110000_rss_catalog_and_ai_tags.sql)
 
 第二个 migration 会额外完成这几件事：
 
@@ -106,8 +107,10 @@ supabase db push
 - 限制站点总注册用户数为 20
 - 限制单用户最多收藏 50 个 RSS 源
 - 开启 `pg_cron` 并定期清理缓存表和 30 天外的 RSS 数据
+- 为 RSS 源补充类目字段，并写入正式的科技、金融、经济源列表
+- 将条目标签切换为 AI 生成模式，单条最多 5 个
 
-### 3.4 导入测试 RSS 源
+### 3.4 导入 RSS 源
 
 项目已经把测试源接进了 Supabase seed 配置：
 
@@ -121,10 +124,11 @@ supabase db push
 
 如果你是本地联调，执行 `supabase db reset` 时会自动跑 seed。
 
-导入后，你会得到两个源：
+导入后，你会得到这些类目和源：
 
-- Hacker News: [https://news.ycombinator.com/rss](https://news.ycombinator.com/rss)
-- New York Times Home Page: [https://rss.nytimes.com/services/xml/rss/nyt/HomePage.xml](https://rss.nytimes.com/services/xml/rss/nyt/HomePage.xml)
+- 科技：TechCrunch、Ars Technica、The Verge、Hacker News
+- 金融：Reuters Business、CNBC Finance、Investing.com
+- 经济：IMF Blog、Marginal Revolution
 
 ### 3.5 部署 Edge Function
 
@@ -153,6 +157,7 @@ supabase functions deploy rss-summary-ready --project-ref <your-project-ref>
 
 1. 开启 `GitHub`
 2. 保持 `Email` 可用
+3. 如果要正式支持多人邮箱登录，建议同时配置自定义 SMTP；否则 Supabase 内置邮件服务会比较快碰到发送速率限制
 
 GitHub Provider 需要在 GitHub OAuth App 中配置回调地址，通常填：
 
@@ -169,6 +174,11 @@ https://<project-ref>.supabase.co/auth/v1/callback
   - `https://<your-frontend-domain>`
 
 如果你后续使用 Cloudflare 预览域名，也把对应预览域名加进去。
+
+邮箱登录这条链路还要注意两点：
+
+- Magic Link 默认单次有效，重新发送后请只使用最新邮件里的链接
+- Supabase 默认会对同一邮箱加 60 秒重发冷却，内置邮件服务还有更严格的项目级发送限流
 
 ### 3.8 创建 Database Webhook
 
@@ -357,8 +367,10 @@ curl -X POST http://127.0.0.1:8000/api/v1/rss-fetch-jobs \
 - `rss_sources.last_fetch_status` 变成 `ok`
 - `rss_entries` 出现新数据
 - 如果配置了 AI，则部分条目 `summary_status` 会变成 `completed`
+- `rss_sources.last_fetched_at` 会在服务启动后的首次抓取和后续定时抓取中持续更新
 - `rss_live_events` 会收到 Edge Function 写入的事件
 - 前端 `/rss` 页面只会展示最近 30 天的条目，标签筛选只展示出现次数大于等于 5 的标签
+- 前端会显示源类目、全部 RSS 源列表，并支持直接订阅
 
 ## 5. 部署前端到 Cloudflare
 
@@ -488,10 +500,10 @@ compatibility_flags = ["nodejs_compat", "global_fetch_strictly_public"]
 按这个顺序验收最省时间：
 
 1. 打开前端首页，确认 `/notes` 能看到同步后的 Obsidian 内容
-2. 打开 Supabase，确认 `rss_sources` 里已经有两条测试源
+2. 打开 Supabase，确认 `rss_sources` 里已经有科技、金融、经济三类源
 3. 调用一次 `POST /api/v1/rss-fetch-jobs`
 4. 确认 `rss_entries` 已写入数据
-5. 打开前端 `/rss` 页面，确认能看到 HN 和 NYT 最近 30 天内的内容
+5. 打开前端 `/rss` 页面，确认能看到各类 RSS 源、分类按钮和最近 30 天内的内容
 6. 点击顶部登录按钮，确认 GitHub 登录和邮箱登录都能正常回跳
 7. 登录后收藏一个订阅源，确认只在当前账户下可见
 8. 如果配了 AI，再确认 `rss_live_events` 会随着摘要完成持续写入
@@ -501,7 +513,7 @@ compatibility_flags = ["nodejs_compat", "global_fetch_strictly_public"]
 如果你想最快跑通，不要一次做太多，按下面顺序就够了：
 
 1. Supabase 建项目并执行 migration
-2. 导入两个测试 RSS 源
+2. 导入正式 RSS 源
 3. 本地启动后端并手动触发抓取
 4. 本地启动前端确认 `/notes` 和 `/rss` 都正常
 5. 部署后端 Docker 到云服务器

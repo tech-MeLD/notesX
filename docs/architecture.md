@@ -5,7 +5,7 @@
 这个项目围绕三个核心目标展开：
 
 1. 用 Astro Content Collections 托管 Obsidian 笔记内容。
-2. 用 FastAPI + Supabase 实现 RSS 聚合、标签过滤、热度排序和 AI 摘要。
+2. 用 FastAPI + Supabase 实现 RSS 聚合、热度排序、分类筛选、AI 摘要和 AI 标签。
 3. 保持前后端分离，但结构上不过度工程化，便于后续追加支付 API。
 
 ## 推荐架构
@@ -41,7 +41,8 @@ docs/
 - Obsidian 内容通过 `scripts/sync-obsidian.ts` 同步到 `src/content/notes`。
 - 所有非 Markdown 附件复制到 `public/notes-assets`，这样相对附件路径仍然能映射到静态资源。
 - `remark-obsidian-links.mjs` 负责把 `.md` 相对链接和 `#标题` 锚点改写成站点路由。
-- RSS 页面由 Svelte 组件承接交互，用 REST API 获取数据，用 Supabase Realtime 接收摘要完成事件。
+- RSS 页面由一个 Svelte 组件承接交互，统一处理类目切换、源列表、标签筛选、订阅收藏和 Realtime 更新。
+- 邮箱登录回跳统一走 `/auth/confirm`，避免直接回跳业务页时 magic link/code 交换不稳定。
 
 ## 后端策略
 
@@ -54,7 +55,8 @@ docs/
   - `POST /api/v1/rss-fetch-jobs`
   - `POST /api/v1/rss-entries/{id}/summary-jobs`
 - `APScheduler` 在 API 进程内运行定时抓取，避免单独引入消息队列和 worker。
-- RSS 解析、热度计算、AI 摘要都在 `app/services/rss_service.py` 里串起来。
+- 调度器在服务启动后会立即执行一次抓取，然后再按间隔继续运行，减少部署后长时间停留在旧数据的情况。
+- RSS 解析、热度计算、AI 摘要与 AI 标签都集中在 `app/services/rss_service.py` 和 `app/services/summary_service.py`。
 - 管理接口默认支持两种保护方式：
   - Supabase Auth JWT
   - `X-Admin-Token` 作为本地或服务器侧兜底
@@ -63,8 +65,8 @@ docs/
 
 ### 核心表
 
-- `public.rss_sources`：RSS 源配置、拉取间隔、ETag、最后一次状态
-- `public.rss_entries`：聚合后的条目、标签、热度分数、摘要状态
+- `public.rss_sources`：RSS 源配置、类目、拉取间隔、ETag、最后一次状态
+- `public.rss_entries`：聚合后的条目、AI 标签、热度分数、摘要状态
 - `public.rss_live_events`：前端 Realtime 订阅的轻量事件表
 - `public.user_source_favorites`：用户收藏的订阅源，开启 RLS 后只允许用户访问自己的记录
 
@@ -73,10 +75,10 @@ docs/
 - `cache.api_response_cache`
 - `cache.hot_snapshots`
 
-这两张表用来替代一部分 Redis 的“短时缓存”职责，优点是：
+这两张表用来替代一部分 Redis 的短时缓存职责，优点是：
 
 - 结构简单，直接和业务 SQL 共置
-- 查询命中快，适合首页热点流和标签页缓存
+- 查询命中快，适合首页热点流和筛选结果缓存
 - crash 后自动丢失也没关系，因为可以重新计算
 
 注意：UNLOGGED 表不适合存放核心业务数据，所以这里只缓存可重建的派生结果。
@@ -91,12 +93,14 @@ docs/
 - 数据库触发器同时限制：
   - 站点总注册用户最多 20 个
   - 单个用户最多收藏 50 个 RSS 源
+- Supabase 自带邮箱服务有速率限制，正式环境如果要稳定支持多人邮箱登录，建议切到自定义 SMTP。
 
-### RSS 保留策略
+### RSS 保留与标签策略
 
 - API 查询层默认只返回最近 30 天内的 RSS 条目。
 - 抓取任务每次完成后会顺手裁剪超过 30 天的旧条目，避免数据越积越多。
-- `pg_cron` 继续每天执行一次兜底清理，保证数据库和缓存表不会长期堆积。
+- `pg_cron` 继续每天执行一次兜底清理，同时定时清掉过期缓存。
+- 条目标签不再直接复用源标签，而是由 AI 从正文中提炼，单条最多保留 5 个。
 - 标签聚合同样只统计最近 30 天内的数据，并且只返回出现次数大于等于 5 的标签，避免前端筛选过碎。
 
 ## Edge Function 链路
@@ -118,9 +122,9 @@ docs/
 ### 前端
 
 - 代码托管在 GitHub。
-- Astro 前端连接 Cloudflare Pages 或 Cloudflare Workers。
+- Astro 前端部署到 Cloudflare Workers。
 - DNS 统一托管在 Cloudflare。
-- 如果走 Cloudflare Workers 部署，建议开启 `nodejs_compat`，因为 Svelte SSR 在构建期会提示 `node:async_hooks` 兼容警告。
+- 建议开启 `nodejs_compat`，因为 Svelte SSR 在 Cloudflare 上会用到 Node 兼容能力。
 
 ### 后端
 

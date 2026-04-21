@@ -18,10 +18,22 @@
     source_id: string;
   }
 
+  interface CategoryOption {
+    value: string;
+    label: string;
+    count: number;
+  }
+
   export let apiBaseUrl: string;
   export let initialEntries: RssEntry[] = [];
   export let initialTags: TagBucket[] = [];
   export let pageSize = 12;
+
+  const categoryLabels: Record<string, string> = {
+    technology: "科技",
+    finance: "金融",
+    economy: "经济"
+  };
 
   let entries = initialEntries;
   let tags = initialTags.filter((bucket) => bucket.count >= 5);
@@ -30,19 +42,34 @@
   let favoriteSourceIds = new Set<string>();
   let session: Session | null = null;
   let activeTag = "";
+  let activeCategory = "";
+  let activeSourceId = "";
   let sort = "hot";
   let loading = false;
   let loadingTags = false;
+  let loadingSources = false;
   let loadingFavorites = false;
   let error = "";
   let favoriteError = "";
   let favoriteNotice = "";
   let showFavoriteSourcesOnly = false;
   let renderedEntries: RssEntry[] = entries;
+  let visibleSources: RssSource[] = [];
+  let categoryOptions: CategoryOption[] = [];
   let realtimeChannel: { unsubscribe: () => unknown } | null = null;
   let authUnsubscribe = () => {};
 
   const supabase = getBrowserSupabase();
+
+  $: categoryOptions = ["technology", "finance", "economy"]
+    .filter((value) => sourceCatalog.some((source) => source.category === value))
+    .map((value) => ({
+      value,
+      label: categoryLabels[value] ?? value,
+      count: sourceCatalog.filter((source) => source.category === value).length
+    }));
+
+  $: visibleSources = sourceCatalog.filter((source) => !activeCategory || source.category === activeCategory);
 
   $: renderedEntries = showFavoriteSourcesOnly
     ? entries.filter((entry) => favoriteSourceIds.has(entry.source_id))
@@ -84,6 +111,31 @@
     favoriteSources = sourceCatalog.filter((source) => favoriteSourceIds.has(source.id));
   }
 
+  function formatDate(value: string | null) {
+    if (!value) {
+      return "尚未抓取";
+    }
+
+    return new Intl.DateTimeFormat("zh-CN", {
+      month: "short",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit"
+    }).format(new Date(value));
+  }
+
+  function formatSourceStatus(source: RssSource) {
+    if (source.last_fetch_status === "ok" || source.last_fetch_status === "not_modified") {
+      return `最近抓取 ${formatDate(source.last_fetched_at)}`;
+    }
+
+    if (source.last_fetch_status === "failed") {
+      return source.last_fetch_error ? `抓取失败：${source.last_fetch_error}` : "抓取失败";
+    }
+
+    return "等待首次抓取";
+  }
+
   async function reloadEntries() {
     loading = true;
     error = "";
@@ -93,7 +145,9 @@
         buildApiUrl("/api/v1/rss-entries", {
           sort,
           limit: pageSize,
-          tag: activeTag || undefined
+          tag: activeTag || undefined,
+          category: activeCategory || undefined,
+          source_id: activeSourceId || undefined
         }),
         {
           headers: { accept: "application/json" },
@@ -118,10 +172,16 @@
     loadingTags = true;
 
     try {
-      const response = await fetch(buildApiUrl("/api/v1/rss-tags"), {
-        headers: { accept: "application/json" },
-        cache: "no-store"
-      });
+      const response = await fetch(
+        buildApiUrl("/api/v1/rss-tags", {
+          category: activeCategory || undefined,
+          source_id: activeSourceId || undefined
+        }),
+        {
+          headers: { accept: "application/json" },
+          cache: "no-store"
+        }
+      );
 
       if (!response.ok) {
         throw new Error(`加载标签失败：${response.status}`);
@@ -130,7 +190,6 @@
       tags = ((await response.json()) as TagBucket[]).filter((bucket) => bucket.count >= 5);
       if (activeTag && !tags.some((bucket) => bucket.tag === activeTag)) {
         activeTag = "";
-        await reloadEntries();
       }
     } catch (fetchError) {
       console.warn("Failed to reload RSS tags", fetchError);
@@ -139,22 +198,31 @@
     }
   }
 
-  async function ensureSourceCatalog() {
-    if (sourceCatalog.length > 0) {
-      return;
+  async function reloadSources() {
+    loadingSources = true;
+
+    try {
+      const response = await fetch(buildApiUrl("/api/v1/rss-sources"), {
+        headers: { accept: "application/json" },
+        cache: "no-store"
+      });
+
+      if (!response.ok) {
+        throw new Error(`加载订阅源失败：${response.status}`);
+      }
+
+      sourceCatalog = (await response.json()) as RssSource[];
+
+      if (activeSourceId && !sourceCatalog.some((source) => source.id === activeSourceId)) {
+        activeSourceId = "";
+      }
+
+      syncFavoriteSources();
+    } catch (fetchError) {
+      error = fetchError instanceof Error ? fetchError.message : "加载订阅源失败";
+    } finally {
+      loadingSources = false;
     }
-
-    const response = await fetch(buildApiUrl("/api/v1/rss-sources"), {
-      headers: { accept: "application/json" },
-      cache: "no-store"
-    });
-
-    if (!response.ok) {
-      throw new Error(`加载订阅源失败：${response.status}`);
-    }
-
-    sourceCatalog = (await response.json()) as RssSource[];
-    syncFavoriteSources();
   }
 
   async function loadFavorites() {
@@ -169,7 +237,6 @@
     favoriteError = "";
 
     try {
-      await ensureSourceCatalog();
       const { data, error: favoritesError } = await supabase
         .from("user_source_favorites")
         .select("source_id")
@@ -191,7 +258,7 @@
   async function toggleFavorite(sourceId: string) {
     if (!supabase || !session) {
       favoriteNotice = "";
-      favoriteError = "请先登录后再收藏订阅源。";
+      favoriteError = "请先登录后再订阅订阅源。";
       return;
     }
 
@@ -210,7 +277,7 @@
         }
 
         favoriteSourceIds = new Set([...favoriteSourceIds].filter((id) => id !== sourceId));
-        favoriteNotice = "已取消收藏。";
+        favoriteNotice = "已取消订阅。";
       } else {
         const { error: insertError } = await supabase.from("user_source_favorites").insert({ source_id: sourceId });
 
@@ -219,13 +286,30 @@
         }
 
         favoriteSourceIds = new Set([...favoriteSourceIds, sourceId]);
-        favoriteNotice = "收藏成功。";
+        favoriteNotice = "订阅成功。";
       }
 
       syncFavoriteSources();
     } catch (toggleError) {
-      favoriteError = toggleError instanceof Error ? toggleError.message : "更新收藏状态失败";
+      favoriteError = toggleError instanceof Error ? toggleError.message : "更新订阅状态失败";
     }
+  }
+
+  async function applyFilters() {
+    await Promise.all([reloadTags(), reloadEntries()]);
+  }
+
+  async function selectCategory(category: string) {
+    activeCategory = category;
+    activeSourceId = "";
+    activeTag = "";
+    await applyFilters();
+  }
+
+  async function selectSource(sourceId: string) {
+    activeSourceId = activeSourceId === sourceId ? "" : sourceId;
+    activeTag = "";
+    await applyFilters();
   }
 
   function subscribeRealtime() {
@@ -256,7 +340,7 @@
 
   onMount(async () => {
     subscribeRealtime();
-    await Promise.all([reloadTags(), reloadEntries()]);
+    await Promise.all([reloadSources(), reloadTags(), reloadEntries()]);
 
     if (!supabase) {
       return;
@@ -287,6 +371,77 @@
 </script>
 
 <section class="flex flex-col gap-6">
+  <section class="rounded-[1.5rem] border border-black/8 bg-white/70 p-5 shadow-[0_18px_48px_rgba(30,32,36,0.06)]">
+    <div class="flex flex-col gap-4">
+      <div class="flex flex-wrap items-center gap-2">
+        <button
+          class:active-pill={!activeCategory}
+          class="filter-pill"
+          type="button"
+          on:click={() => void selectCategory("")}
+        >
+          全部类目
+        </button>
+
+        {#each categoryOptions as option}
+          <button
+            class:active-pill={activeCategory === option.value}
+            class="filter-pill"
+            type="button"
+            on:click={() => void selectCategory(option.value)}
+          >
+            {option.label}
+            <span class="opacity-60">{option.count}</span>
+          </button>
+        {/each}
+      </div>
+
+      <div class="flex items-center justify-between gap-3">
+        <div>
+          <p class="text-xs uppercase tracking-[0.18em] text-[var(--muted)]">RSS 源目录</p>
+          <p class="mt-2 text-sm leading-7 text-[var(--muted)]">
+            从数据库实时读取所有可用 RSS 源。你可以先按类目筛选，再订阅自己关心的源。
+          </p>
+        </div>
+        {#if loadingSources}
+          <p class="text-sm text-[var(--muted)]">正在同步订阅源...</p>
+        {/if}
+      </div>
+
+      <div class="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+        {#each visibleSources as source}
+          <article class:source-selected={activeSourceId === source.id} class="source-card">
+            <div class="space-y-2">
+              <div class="flex flex-wrap items-center gap-2 text-xs uppercase tracking-[0.16em] text-[var(--muted)]">
+                <span>{categoryLabels[source.category] ?? source.category}</span>
+                <span>{formatSourceStatus(source)}</span>
+              </div>
+              <h3 class="text-base font-semibold text-[var(--ink)]">{source.title}</h3>
+              <p class="text-sm leading-6 text-[var(--muted)]">{source.feed_url}</p>
+            </div>
+
+            <div class="mt-4 flex flex-wrap gap-2">
+              <button class="source-action" type="button" on:click={() => void selectSource(source.id)}>
+                {activeSourceId === source.id ? "查看全部" : "查看内容"}
+              </button>
+              <button
+                class:source-subscribe-active={favoriteSourceIds.has(source.id)}
+                class="source-action"
+                type="button"
+                on:click={() => void toggleFavorite(source.id)}
+              >
+                {favoriteSourceIds.has(source.id) ? "已订阅" : "订阅"}
+              </button>
+              <a class="source-action" href={source.site_url ?? source.feed_url} target="_blank" rel="noreferrer">
+                访问站点
+              </a>
+            </div>
+          </article>
+        {/each}
+      </div>
+    </div>
+  </section>
+
   <div class="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
     <div class="flex flex-wrap gap-3">
       <button
@@ -321,7 +476,7 @@
             showFavoriteSourcesOnly = !showFavoriteSourcesOnly;
           }}
         >
-          只看收藏源
+          只看已订阅源
         </button>
       {/if}
     </div>
@@ -336,7 +491,7 @@
           void reloadEntries();
         }}
       >
-        All tags
+        全部标签
       </button>
 
       {#each tags as bucket}
@@ -363,27 +518,27 @@
           <p class="text-xs uppercase tracking-[0.18em] text-[var(--muted)]">我的订阅源</p>
           <p class="mt-2 text-sm leading-7 text-[var(--muted)]">
             {favoriteSources.length > 0
-              ? `已收藏 ${favoriteSources.length} 个订阅源，仅你自己可见。`
-              : "还没有收藏订阅源，点击卡片右上角按钮即可添加。"}
+              ? `已订阅 ${favoriteSources.length} 个 RSS 源，仅你自己可见。`
+              : "还没有订阅 RSS 源，可以在上方源目录里直接添加。"}
           </p>
         </div>
 
         {#if loadingFavorites}
-          <p class="text-sm text-[var(--muted)]">正在同步收藏状态...</p>
+          <p class="text-sm text-[var(--muted)]">正在同步订阅状态...</p>
         {/if}
       </div>
 
       {#if favoriteSources.length > 0}
         <div class="mt-4 flex flex-wrap gap-2">
           {#each favoriteSources as source}
-            <a
-              class="favorite-source-pill"
-              href={source.site_url ?? source.feed_url}
-              target="_blank"
-              rel="noreferrer"
+            <button
+              class:active-pill={activeSourceId === source.id}
+              class="filter-pill"
+              type="button"
+              on:click={() => void selectSource(source.id)}
             >
               {source.title}
-            </a>
+            </button>
           {/each}
         </div>
       {/if}
@@ -392,12 +547,6 @@
         <p class="mt-3 text-sm text-[var(--success)]">{favoriteNotice}</p>
       {/if}
     </section>
-  {/if}
-
-  {#if favoriteNotice && !session}
-    <p class="rounded-2xl border border-[var(--success)]/20 bg-[var(--success)]/8 px-4 py-3 text-sm text-[var(--success)]">
-      {favoriteNotice}
-    </p>
   {/if}
 
   {#if favoriteError}
@@ -413,7 +562,7 @@
   {/if}
 
   {#if !loadingTags && tags.length === 0}
-    <p class="text-sm text-[var(--muted)]">最近 30 天内还没有达到 5 次以上的可筛选标签。</p>
+    <p class="text-sm text-[var(--muted)]">当前筛选范围内还没有达到 5 次以上的 AI 标签。</p>
   {/if}
 
   <div class="grid gap-4">
@@ -422,6 +571,7 @@
         <div class="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
           <div class="flex flex-wrap items-center gap-3 text-xs uppercase tracking-[0.18em] text-[var(--muted)]">
             <span>{entry.source_title}</span>
+            <span>{categoryLabels[entry.source_category] ?? entry.source_category}</span>
             <span>
               {entry.published_at
                 ? new Intl.DateTimeFormat("zh-CN", { month: "short", day: "numeric" }).format(new Date(entry.published_at))
@@ -431,12 +581,12 @@
           </div>
 
           <button
-            class:favorite-active={favoriteSourceIds.has(entry.source_id)}
-            class="favorite-toggle"
+            class:source-subscribe-active={favoriteSourceIds.has(entry.source_id)}
+            class="source-action"
             type="button"
             on:click={() => void toggleFavorite(entry.source_id)}
           >
-            {favoriteSourceIds.has(entry.source_id) ? "已收藏源" : "收藏源"}
+            {favoriteSourceIds.has(entry.source_id) ? "已订阅" : "订阅源"}
           </button>
         </div>
 
@@ -445,9 +595,7 @@
             {entry.title}
           </a>
 
-          <p class="text-sm leading-7 text-[var(--muted)]">
-            {entry.ai_summary ?? entry.excerpt}
-          </p>
+          <p class="text-sm leading-7 text-[var(--muted)]">{entry.ai_summary ?? entry.excerpt}</p>
 
           <div class="flex flex-wrap gap-2">
             {#each entry.tags as tag}
@@ -472,20 +620,20 @@
 
   {#if !loading && renderedEntries.length === 0}
     <p class="text-sm text-[var(--muted)]">
-      {showFavoriteSourcesOnly ? "当前筛选下没有来自收藏订阅源的内容。" : "最近 30 天内还没有可展示的 RSS 内容。"}
+      {showFavoriteSourcesOnly ? "当前筛选下没有来自已订阅源的内容。" : "当前筛选下还没有可展示的 RSS 内容。"}
     </p>
   {/if}
 </section>
 
 <style>
   .filter-pill,
-  .favorite-source-pill,
-  .favorite-toggle {
+  .source-action {
     border-radius: 9999px;
     transition: all 180ms ease;
   }
 
-  .filter-pill {
+  .filter-pill,
+  .source-action {
     border: 1px solid rgba(19, 20, 24, 0.08);
     background: rgba(255, 255, 255, 0.64);
     padding: 0.6rem 1rem;
@@ -495,6 +643,7 @@
   }
 
   .filter-pill:hover,
+  .source-action:hover,
   .active-pill {
     color: var(--ink);
     border-color: rgba(177, 86, 49, 0.24);
@@ -502,37 +651,20 @@
     transform: translateY(-1px);
   }
 
-  .favorite-source-pill {
+  .source-card {
+    border-radius: 1.35rem;
     border: 1px solid rgba(19, 20, 24, 0.08);
-    background: rgba(255, 255, 255, 0.84);
-    padding: 0.48rem 0.88rem;
-    font-size: 0.8rem;
-    font-weight: 600;
-    color: var(--ink);
+    background: rgba(255, 255, 255, 0.62);
+    padding: 1rem;
+    box-shadow: 0 12px 30px rgba(30, 32, 36, 0.05);
   }
 
-  .favorite-source-pill:hover {
-    border-color: rgba(177, 86, 49, 0.24);
-    color: var(--accent);
+  .source-selected {
+    border-color: rgba(177, 86, 49, 0.28);
+    box-shadow: 0 16px 36px rgba(177, 86, 49, 0.08);
   }
 
-  .favorite-toggle {
-    border: 1px solid rgba(19, 20, 24, 0.08);
-    background: rgba(255, 255, 255, 0.82);
-    padding: 0.42rem 0.82rem;
-    font-size: 0.74rem;
-    font-weight: 700;
-    letter-spacing: 0.08em;
-    color: var(--muted);
-  }
-
-  .favorite-toggle:hover {
-    cursor: pointer;
-    border-color: rgba(177, 86, 49, 0.24);
-    color: var(--accent);
-  }
-
-  .favorite-active {
+  .source-subscribe-active {
     border-color: rgba(177, 86, 49, 0.24);
     background: rgba(177, 86, 49, 0.12);
     color: var(--accent);

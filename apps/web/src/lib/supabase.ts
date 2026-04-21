@@ -34,5 +34,8 @@ export function getAuthRedirectUrl() {
     return undefined;
   }
 
-  return window.location.href;
+  const next = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+  const callbackUrl = new URL("/auth/confirm", window.location.origin);
+  callbackUrl.searchParams.set("next", next);
+  return callbackUrl.toString();
 }

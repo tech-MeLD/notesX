@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from datetime import UTC, datetime
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 import asyncpg
@@ -27,5 +28,6 @@ def create_scheduler(pool: asyncpg.Pool) -> AsyncIOScheduler:
         max_instances=1,
         coalesce=True,
         replace_existing=True,
+        next_run_time=datetime.now(UTC),
     )
     return scheduler

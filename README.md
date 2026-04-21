@@ -54,12 +54,13 @@
   - `pnpm.cmd cf:deploy:web`
 - 前端构建时会读取本地 `apps/web/.env`；如果你后续改成 Cloudflare Workers Builds，再把这几个 `PUBLIC_*` 变量同步到 Cloudflare 构建环境即可
 
-## RSS 测试源
+## RSS 源
 
-项目内已经提供两个测试 RSS 源 seed：
+项目内已经提供一组按类目分好的启动 RSS 源 seed：
 
-- Hacker News：`https://news.ycombinator.com/rss`
-- New York Times Home Page：`https://rss.nytimes.com/services/xml/rss/nyt/HomePage.xml`
+- 科技：TechCrunch、Ars Technica、The Verge、Hacker News
+- 金融：Reuters Business、CNBC Finance、Investing.com
+- 经济：IMF Blog、Marginal Revolution
 
 相关文件：
 
@@ -72,9 +73,11 @@
 - Obsidian 笔记保持 Markdown 作为单一内容源，导入后进入 Astro Content Collections
 - RSS 数据实时落到 Supabase PostgreSQL，默认通过 UNLOGGED 缓存表做短时查询缓存
 - FastAPI 负责异步抓取、聚合、标签过滤、热度计算与 AI 摘要
+- RSS 源带有独立类目字段，前端可以按科技、金融、经济浏览全部订阅源并直接订阅
 - RSS 只展示并保留最近 30 天的数据，超出窗口的数据会在抓取后和定时任务中清理
-- 标签筛选只展示最近 30 天内出现次数大于等于 5 的标签
+- 标签由 AI 从条目正文分析生成，单条最多 5 个，只展示最近 30 天内出现次数大于等于 5 的标签
 - 用户登录使用 Supabase Auth，支持 GitHub 登录和邮箱魔法链接登录
+- 邮箱登录默认受 Supabase 60 秒重发冷却和邮件发送限流影响，正式上线建议配置自定义 SMTP
 - 收藏功能使用 `public.user_source_favorites` + RLS，用户只能看到自己的收藏订阅源，且单用户最多 50 个收藏
 - 数据库层通过触发器限制站点总注册用户数最多为 20 个
 - `pg_cron` 会定期清理缓存表，并每天执行一次 RSS 过期数据清理

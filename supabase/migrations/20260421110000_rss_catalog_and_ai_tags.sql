@@ -1,3 +1,34 @@
+alter table public.rss_sources
+add column if not exists category text not null default 'technology';
+
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_constraint
+    where conname = 'rss_sources_category_check'
+  ) then
+    alter table public.rss_sources
+    add constraint rss_sources_category_check
+    check (category in ('technology', 'finance', 'economy'));
+  end if;
+end
+$$;
+
+create index if not exists idx_rss_sources_category_priority
+on public.rss_sources (category, source_priority desc, title asc);
+
+alter table public.rss_entries
+add column if not exists ai_tags_generated boolean not null default false;
+
+update public.rss_entries
+set
+  tags = '{}'::text[],
+  ai_tags_generated = false;
+
+delete from public.rss_sources
+where slug = 'nyt-homepage';
+
 insert into public.rss_sources (
   slug,
   title,
@@ -120,6 +151,3 @@ do update set
   fetch_interval_minutes = excluded.fetch_interval_minutes,
   is_active = excluded.is_active,
   updated_at = timezone('utc', now());
-
-delete from public.rss_sources
-where slug = 'nyt-homepage';

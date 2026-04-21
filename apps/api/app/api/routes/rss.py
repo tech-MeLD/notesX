@@ -45,12 +45,22 @@ async def create_rss_source(
 @router.get("/rss-entries", response_model=RssEntryListResponse)
 async def get_rss_entries(
     tag: str | None = Query(default=None),
+    category: str | None = Query(default=None),
+    source_id: str | None = Query(default=None),
     sort: str = Query(default="hot", pattern="^(hot|latest)$"),
     limit: int = Query(default=12, ge=1, le=50),
     offset: int = Query(default=0, ge=0),
     pool: asyncpg.Pool = Depends(get_pool),
 ) -> RssEntryListResponse:
-    return await list_entries(pool, tag=tag, sort=sort, limit=limit, offset=offset)
+    return await list_entries(
+        pool,
+        tag=tag,
+        category=category,
+        source_id=source_id,
+        sort=sort,
+        limit=limit,
+        offset=offset,
+    )
 
 
 @router.get("/rss-entries/{entry_id}", response_model=RssEntry)
@@ -62,8 +72,12 @@ async def get_rss_entry(entry_id: str, pool: asyncpg.Pool = Depends(get_pool)) -
 
 
 @router.get("/rss-tags", response_model=list[TagBucket])
-async def get_rss_tags(pool: asyncpg.Pool = Depends(get_pool)) -> list[TagBucket]:
-    return await list_tags(pool)
+async def get_rss_tags(
+    category: str | None = Query(default=None),
+    source_id: str | None = Query(default=None),
+    pool: asyncpg.Pool = Depends(get_pool),
+) -> list[TagBucket]:
+    return await list_tags(pool, category=category, source_id=source_id)
 
 
 @router.post("/rss-fetch-jobs", response_model=IngestionJobResponse, status_code=status.HTTP_202_ACCEPTED)

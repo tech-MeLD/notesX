@@ -1,0 +1,17 @@
+---
+import AuthConfirm from "../../components/auth/AuthConfirm.svelte";
+import BaseLayout from "../../layouts/BaseLayout.astro";
+---
+
+<BaseLayout title="正在完成登录 | Knowledge Observatory" description="正在完成 Supabase 登录回调。">
+  <section class="max-w-xl">
+    <p class="text-xs uppercase tracking-[0.22em] text-[var(--muted)]">Authentication</p>
+    <h1 class="mt-4 font-display text-4xl text-[var(--ink)]">正在完成登录</h1>
+    <p class="mt-4 text-sm leading-7 text-[var(--muted)]">
+      如果页面没有自动跳转，请返回首页重新发送最新的登录邮件，旧链接在 Supabase 中会失效。
+    </p>
+    <div class="mt-6">
+      <AuthConfirm client:load />
+    </div>
+  </section>
+</BaseLayout>

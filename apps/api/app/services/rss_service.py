@@ -19,7 +19,7 @@ from dateutil import parser as date_parser
 from app.core.config import settings
 from app.schemas.rss import RssSourceCreate
 from app.services.hot_rank import compute_hot_score
-from app.services.summary_service import summarize_entry
+from app.services.summary_service import EntryEnrichment, enrich_entry
 
 logger = logging.getLogger(__name__)
 whitespace_re = re.compile(r"\s+")
@@ -123,6 +123,7 @@ async def list_sources(pool: asyncpg.Pool) -> list[dict[str, Any]]:
             title,
             feed_url,
             site_url,
+            category,
             tags,
             source_priority,
             fetch_interval_minutes,
@@ -146,18 +147,20 @@ async def create_source(pool: asyncpg.Pool, payload: RssSourceCreate) -> dict[st
             title,
             feed_url,
             site_url,
+            category,
             tags,
             source_priority,
             fetch_interval_minutes,
             is_active
         )
-        values ($1, $2, $3, $4, $5, $6, $7, $8)
+        values ($1, $2, $3, $4, $5, $6, $7, $8, $9)
         returning
             id::text as id,
             slug,
             title,
             feed_url,
             site_url,
+            category,
             tags,
             source_priority,
             fetch_interval_minutes,
@@ -170,6 +173,7 @@ async def create_source(pool: asyncpg.Pool, payload: RssSourceCreate) -> dict[st
         payload.title,
         payload.feed_url,
         payload.site_url,
+        payload.category,
         payload.tags,
         payload.source_priority,
         payload.fetch_interval_minutes,
@@ -182,6 +186,8 @@ async def _query_entries(
     pool: asyncpg.Pool,
     *,
     tag: str | None,
+    category: str | None,
+    source_id: str | None,
     sort: str,
     limit: int,
     offset: int,
@@ -195,6 +201,14 @@ async def _query_entries(
     if tag:
         params.append(tag)
         conditions.append(f"${len(params)} = any(e.tags)")
+
+    if category:
+        params.append(category)
+        conditions.append(f"s.category = ${len(params)}")
+
+    if source_id:
+        params.append(source_id)
+        conditions.append(f"s.id = ${len(params)}::uuid")
 
     where_clause = " and ".join(conditions)
     count_query = f"""
@@ -217,6 +231,7 @@ async def _query_entries(
             e.source_id::text as source_id,
             s.slug as source_slug,
             s.title as source_title,
+            s.category as source_category,
             e.title,
             e.url,
             e.author,
@@ -246,7 +261,7 @@ async def _query_entries(
 
 
 async def refresh_hot_snapshot(pool: asyncpg.Pool, limit: int = 12) -> None:
-    payload = await _query_entries(pool, tag=None, sort="hot", limit=limit, offset=0)
+    payload = await _query_entries(pool, tag=None, category=None, source_id=None, sort="hot", limit=limit, offset=0)
     await pool.execute(
         """
         insert into cache.hot_snapshots (snapshot_key, payload, expires_at)
@@ -264,11 +279,13 @@ async def list_entries(
     pool: asyncpg.Pool,
     *,
     tag: str | None,
+    category: str | None,
+    source_id: str | None,
     sort: str,
     limit: int,
     offset: int,
 ) -> dict[str, Any]:
-    if not tag and sort == "hot" and offset == 0:
+    if not tag and not category and not source_id and sort == "hot" and offset == 0:
         row = await pool.fetchrow(
             """
             select payload::text as payload
@@ -283,13 +300,21 @@ async def list_entries(
             payload["cached"] = True
             return payload
 
-    cache_key = f"entries:{sort}:{tag or 'all'}:{limit}:{offset}"
+    cache_key = f"entries:{sort}:{tag or 'all'}:{category or 'all'}:{source_id or 'all'}:{limit}:{offset}"
     cached = await _read_api_cache(pool, cache_key)
     if cached:
         cached["cached"] = True
         return cached
 
-    payload = await _query_entries(pool, tag=tag, sort=sort, limit=limit, offset=offset)
+    payload = await _query_entries(
+        pool,
+        tag=tag,
+        category=category,
+        source_id=source_id,
+        sort=sort,
+        limit=limit,
+        offset=offset,
+    )
     await _write_api_cache(pool, cache_key, payload)
     return payload
 
@@ -302,6 +327,7 @@ async def get_entry(pool: asyncpg.Pool, entry_id: str) -> dict[str, Any] | None:
             e.source_id::text as source_id,
             s.slug as source_slug,
             s.title as source_title,
+            s.category as source_category,
             e.title,
             e.url,
             e.author,
@@ -325,22 +351,37 @@ async def get_entry(pool: asyncpg.Pool, entry_id: str) -> dict[str, Any] | None:
     return _serialize_row(row) if row else None
 
 
-async def list_tags(pool: asyncpg.Pool) -> list[dict[str, Any]]:
+async def list_tags(pool: asyncpg.Pool, *, category: str | None, source_id: str | None) -> list[dict[str, Any]]:
+    conditions = [
+        "s.is_active = true",
+        "e.ai_tags_generated = true",
+        f"coalesce(e.published_at, e.fetched_at) >= timezone('utc', now()) - interval '{RSS_RETENTION_DAYS} days'",
+    ]
+    params: list[Any] = []
+
+    if category:
+        params.append(category)
+        conditions.append(f"s.category = ${len(params)}")
+
+    if source_id:
+        params.append(source_id)
+        conditions.append(f"s.id = ${len(params)}::uuid")
+
     rows = await pool.fetch(
         f"""
         select tag, count(*)::int as count
         from (
-            select unnest(tags) as tag
+            select unnest(e.tags) as tag
             from public.rss_entries e
             join public.rss_sources s on s.id = e.source_id
-            where s.is_active = true
-              and coalesce(e.published_at, e.fetched_at) >= timezone('utc', now()) - interval '{RSS_RETENTION_DAYS} days'
+            where {' and '.join(conditions)}
         ) tag_values
         where tag is not null and tag <> ''
         group by tag
         having count(*) >= {RSS_TAG_MIN_COUNT}
         order by count desc, tag asc
-        """
+        """,
+        *params,
     )
     return [_serialize_row(row) for row in rows]
 
@@ -370,6 +411,7 @@ async def _load_sources_for_ingestion(
             title,
             feed_url,
             site_url,
+            category,
             tags,
             source_priority,
             fetch_interval_minutes,
@@ -420,22 +462,12 @@ async def _upsert_feed_entry(pool: asyncpg.Pool, source: asyncpg.Record, raw_ent
         or ""
     )
     content_text = _clean_text(content_html)
-    tags = sorted(
-        {
-            *[tag for tag in source.get("tags", []) if tag],
-            *[
-                item.get("term")
-                for item in raw_entry.get("tags", [])
-                if isinstance(item, dict) and item.get("term")
-            ],
-        }
-    )
     guid = raw_entry.get("id") or raw_entry.get("guid") or raw_entry.get("link") or f"{source['slug']}::{raw_entry.get('title', 'untitled')}"
     score_hot = compute_hot_score(
         published_at=published_at,
         source_priority=source.get("source_priority", 1),
         summary_ready=False,
-        tag_count=len(tags),
+        tag_count=0,
     )
     summary_status = "pending" if content_text else "skipped"
 
@@ -451,6 +483,7 @@ async def _upsert_feed_entry(pool: asyncpg.Pool, source: asyncpg.Record, raw_ent
             content_html,
             content_text,
             tags,
+            ai_tags_generated,
             published_at,
             fetched_at,
             score_hot,
@@ -466,12 +499,13 @@ async def _upsert_feed_entry(pool: asyncpg.Pool, source: asyncpg.Record, raw_ent
             $6,
             $7,
             $8,
+            '{}'::text[],
+            false,
             $9,
-            $10,
             timezone('utc', now()),
+            $10,
             $11,
-            $12,
-            $13::jsonb
+            $12::jsonb
         )
         on conflict (source_id, guid)
         do update set
@@ -481,7 +515,11 @@ async def _upsert_feed_entry(pool: asyncpg.Pool, source: asyncpg.Record, raw_ent
             author = excluded.author,
             content_html = excluded.content_html,
             content_text = excluded.content_text,
-            tags = excluded.tags,
+            tags = case
+                when public.rss_entries.ai_tags_generated then public.rss_entries.tags
+                else excluded.tags
+            end,
+            ai_tags_generated = public.rss_entries.ai_tags_generated,
             published_at = excluded.published_at,
             fetched_at = timezone('utc', now()),
             score_hot = excluded.score_hot,
@@ -492,7 +530,17 @@ async def _upsert_feed_entry(pool: asyncpg.Pool, source: asyncpg.Record, raw_ent
             summary_error = null,
             raw_payload = excluded.raw_payload,
             updated_at = timezone('utc', now())
-        returning id::text as id, title, url, content_text, tags, published_at, summary_status
+        returning
+            id::text as id,
+            $13::text as source_title,
+            $14::text as source_category,
+            title,
+            url,
+            content_text,
+            tags,
+            published_at,
+            summary_status,
+            ai_tags_generated
         """,
         source["id"],
         guid,
@@ -502,11 +550,12 @@ async def _upsert_feed_entry(pool: asyncpg.Pool, source: asyncpg.Record, raw_ent
         raw_entry.get("author"),
         content_html,
         content_text,
-        tags,
         published_at,
         score_hot,
         summary_status,
         json.dumps(raw_entry, ensure_ascii=False),
+        source["title"],
+        source.get("category") or "technology",
     )
 
 
@@ -565,6 +614,7 @@ async def _summarize_pending_rows(pool: asyncpg.Pool, rows: list[dict[str, Any]]
 
     async def worker(row: dict[str, Any]) -> bool:
         async with semaphore:
+            current_status = str(row.get("summary_status") or "pending")
             await pool.execute(
                 """
                 update public.rss_entries
@@ -574,12 +624,18 @@ async def _summarize_pending_rows(pool: asyncpg.Pool, rows: list[dict[str, Any]]
                 row["id"],
             )
             try:
-                summary = await summarize_entry(row)
-                if not summary:
+                enrichment = await enrich_entry(row)
+                if not enrichment.summary and not enrichment.tags:
                     await pool.execute(
                         """
                         update public.rss_entries
-                        set summary_status = 'skipped', updated_at = timezone('utc', now())
+                        set
+                            summary_status = case
+                                when summary_status = 'completed' then summary_status
+                                else 'skipped'
+                            end,
+                            summary_error = null,
+                            updated_at = timezone('utc', now())
                         where id = $1::uuid
                         """,
                         row["id"],
@@ -590,20 +646,34 @@ async def _summarize_pending_rows(pool: asyncpg.Pool, rows: list[dict[str, Any]]
                     """
                     update public.rss_entries
                     set
-                        ai_summary = $2,
-                        summary_status = 'completed',
-                        ai_model = $3,
-                        ai_summary_completed_at = timezone('utc', now()),
+                        ai_summary = coalesce($2, ai_summary),
+                        tags = $3::text[],
+                        ai_tags_generated = $4,
+                        summary_status = case
+                            when $2 is not null then 'completed'
+                            when summary_status = 'completed' then summary_status
+                            else 'skipped'
+                        end,
+                        ai_model = $5,
+                        ai_summary_completed_at = case
+                            when $2 is not null then timezone('utc', now())
+                            else ai_summary_completed_at
+                        end,
                         summary_error = null,
-                        score_hot = score_hot + 1.5,
+                        score_hot = case
+                            when $2 is not null and summary_status <> 'completed' then score_hot + 1.5
+                            else score_hot
+                        end,
                         updated_at = timezone('utc', now())
                     where id = $1::uuid
                     """,
                     row["id"],
-                    summary,
+                    enrichment.summary,
+                    enrichment.tags,
+                    bool(enrichment.tags),
                     settings.ai_model,
                 )
-                return True
+                return bool(enrichment.summary or enrichment.tags or current_status == "completed")
             except Exception as error:  # noqa: BLE001
                 logger.exception("Failed to summarize entry %s", row["id"])
                 await pool.execute(
@@ -655,38 +725,55 @@ async def _load_summary_recovery_rows(pool: asyncpg.Pool, *, limit: int) -> list
     rows = await pool.fetch(
         f"""
         select
-            id::text as id,
-            title,
-            content_text,
-            tags,
-            summary_status,
-            updated_at,
-            published_at
-        from public.rss_entries
-        where coalesce(ai_summary, '') = ''
-          and content_text is not null
-          and btrim(content_text) <> ''
-          and coalesce(published_at, fetched_at) >= timezone('utc', now()) - interval '{RSS_RETENTION_DAYS} days'
+            e.id::text as id,
+            s.title as source_title,
+            s.category as source_category,
+            e.title,
+            e.content_text,
+            e.ai_summary,
+            e.tags,
+            e.ai_tags_generated,
+            e.summary_status,
+            e.updated_at,
+            e.published_at
+        from public.rss_entries e
+        join public.rss_sources s on s.id = e.source_id
+        where e.content_text is not null
+          and btrim(e.content_text) <> ''
+          and s.is_active = true
+          and coalesce(e.published_at, e.fetched_at) >= timezone('utc', now()) - interval '{RSS_RETENTION_DAYS} days'
           and (
-                summary_status = 'pending'
-                or (
-                    summary_status = 'failed'
-                    and updated_at <= timezone('utc', now()) - ($1 * interval '1 minute')
+                (
+                    coalesce(e.ai_summary, '') = ''
+                    and e.summary_status = 'pending'
                 )
                 or (
-                    summary_status = 'processing'
-                    and updated_at <= timezone('utc', now()) - ($2 * interval '1 minute')
+                    coalesce(e.ai_summary, '') = ''
+                    and
+                    e.summary_status = 'failed'
+                    and e.updated_at <= timezone('utc', now()) - ($1 * interval '1 minute')
+                )
+                or (
+                    coalesce(e.ai_summary, '') = ''
+                    and
+                    e.summary_status = 'processing'
+                    and e.updated_at <= timezone('utc', now()) - ($2 * interval '1 minute')
+                )
+                or (
+                    e.summary_status = 'completed'
+                    and e.ai_tags_generated = false
                 )
           )
         order by
-            case summary_status
+            case e.summary_status
                 when 'pending' then 1
                 when 'failed' then 2
                 when 'processing' then 3
-                else 4
+                when 'completed' then 4
+                else 5
             end,
-            updated_at asc,
-            published_at desc nulls last
+            e.updated_at asc,
+            e.published_at desc nulls last
         limit $3
         """,
         settings.rss_summary_failed_retry_after_minutes,
@@ -748,9 +835,19 @@ async def run_ingestion_job(
 async def run_summary_job(pool: asyncpg.Pool, entry_id: str) -> dict[str, str]:
     row = await pool.fetchrow(
         """
-        select id::text as id, title, content_text, tags, ai_summary, summary_status
-        from public.rss_entries
-        where id = $1::uuid
+        select
+            e.id::text as id,
+            s.title as source_title,
+            s.category as source_category,
+            e.title,
+            e.content_text,
+            e.tags,
+            e.ai_summary,
+            e.ai_tags_generated,
+            e.summary_status
+        from public.rss_entries e
+        join public.rss_sources s on s.id = e.source_id
+        where e.id = $1::uuid
         """,
         entry_id,
     )
@@ -762,7 +859,9 @@ async def run_summary_job(pool: asyncpg.Pool, entry_id: str) -> dict[str, str]:
 
     if payload.get("ai_summary") and payload.get("summary_status") != "completed":
         repaired_entries = await _repair_summary_state_mismatches(pool, entry_id=entry_id)
-    elif payload.get("summary_status") != "completed" and payload.get("content_text"):
+    elif payload.get("content_text") and (
+        payload.get("summary_status") != "completed" or not payload.get("ai_tags_generated")
+    ):
         await _summarize_pending_rows(pool, [payload])
     elif payload.get("summary_status") != "completed":
         await pool.execute(
