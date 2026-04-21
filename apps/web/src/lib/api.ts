@@ -1,4 +1,5 @@
 import { apiBaseUrl } from "./site";
+import { buildApiUrl } from "./api-url";
 
 export interface RssEntry {
   id: string;
@@ -45,17 +46,6 @@ export interface TagBucket {
   count: number;
 }
 
-function buildApiUrl(pathname: string, search?: Record<string, string | number | undefined>) {
-  const url = new URL(pathname, `${apiBaseUrl}/`);
-  for (const [key, value] of Object.entries(search ?? {})) {
-    if (value !== undefined && value !== "") {
-      url.searchParams.set(key, String(value));
-    }
-  }
-
-  return url;
-}
-
 export async function fetchRssEntries(options?: {
   tag?: string;
   category?: string;
@@ -64,7 +54,7 @@ export async function fetchRssEntries(options?: {
   limit?: number;
   offset?: number;
 }) {
-  const url = buildApiUrl("/api/v1/rss-entries", {
+  const url = buildApiUrl(apiBaseUrl, "/rss-entries", {
     tag: options?.tag,
     category: options?.category,
     source_id: options?.sourceId,
@@ -87,7 +77,7 @@ export async function fetchRssEntries(options?: {
 
 export async function fetchRssTags(options?: { category?: string; sourceId?: string }) {
   const response = await fetch(
-    buildApiUrl("/api/v1/rss-tags", {
+    buildApiUrl(apiBaseUrl, "/rss-tags", {
       category: options?.category,
       source_id: options?.sourceId
     }),
@@ -105,7 +95,7 @@ export async function fetchRssTags(options?: { category?: string; sourceId?: str
 }
 
 export async function fetchRssSources() {
-  const response = await fetch(buildApiUrl("/api/v1/rss-sources"), {
+  const response = await fetch(buildApiUrl(apiBaseUrl, "/rss-sources"), {
     headers: { accept: "application/json" },
     cache: "no-store"
   });

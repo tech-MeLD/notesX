@@ -401,17 +401,20 @@ Copy-Item apps/web/.env.example apps/web/.env
 填写：
 
 - `PUBLIC_SITE_URL`
-- `PUBLIC_API_BASE_URL`
 - `PUBLIC_SUPABASE_URL`
 - `PUBLIC_SUPABASE_ANON_KEY`
+- `API_ORIGIN`
 - `OBSIDIAN_VAULT_DIR` 仅本地同步笔记时需要，线上部署可以不填
 
 说明：
 
 - 你现在采用的是“本地 build，再用 Wrangler deploy”的最小方案，所以前端部署时直接读取本地 `apps/web/.env`
 - 这几个 `PUBLIC_*` 值会在构建阶段注入到前端，不需要额外放进 Worker Secret
+- `API_ORIGIN` 只给 Astro/Cloudflare 服务端代理使用，不会暴露给浏览器
+- 前端现在默认通过同源 `/api/v1` 代理去取公共 RSS 数据，这样即使后端暂时只有 HTTP，也不会再触发 Mixed Content
 - 如果你后面改成 Cloudflare Workers Builds 或 GitHub 自动部署，再把同样的 `PUBLIC_*` 变量配置到 Cloudflare 的构建环境即可
 - 这两个 Supabase 公共变量同时也是前端登录和收藏功能的必填项
+- 只有当你已经给后端单独配好了 HTTPS 域名时，才需要额外设置 `PUBLIC_API_BASE_URL=https://...`
 
 ### 5.2 同步 Obsidian 内容
 
@@ -507,6 +510,12 @@ compatibility_flags = ["nodejs_compat", "global_fetch_strictly_public"]
 6. 点击顶部登录按钮，确认 GitHub 登录和邮箱登录都能正常回跳
 7. 登录后收藏一个订阅源，确认只在当前账户下可见
 8. 如果配了 AI，再确认 `rss_live_events` 会随着摘要完成持续写入
+
+如果你在浏览器里打开站点时曾遇到 `Mixed Content`：
+
+- 现在优先检查前端是否已经重新部署到包含同源 `/api/v1` 代理的新版本
+- 再确认 `apps/web/.env` 里已经填写 `API_ORIGIN=http://<your-api-host>:8000`
+- 不要再把 `PUBLIC_API_BASE_URL` 留成 `http://...`，除非你明确要覆盖成 `https://...`
 
 ## 8. 你现在最推荐的最小上线顺序
 

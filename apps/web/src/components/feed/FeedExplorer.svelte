@@ -3,6 +3,7 @@
   import { onDestroy, onMount } from "svelte";
 
   import type { RssEntry, RssSource, TagBucket } from "../../lib/api";
+  import { buildApiUrl as buildRequestUrl } from "../../lib/api-url";
   import { getBrowserSupabase } from "../../lib/supabase";
 
   interface LiveEventPayload {
@@ -96,15 +97,7 @@
   }
 
   function buildApiUrl(pathname: string, search?: Record<string, string | number | undefined>) {
-    const url = new URL(pathname, `${apiBaseUrl}/`);
-
-    for (const [key, value] of Object.entries(search ?? {})) {
-      if (value !== undefined && value !== "") {
-        url.searchParams.set(key, String(value));
-      }
-    }
-
-    return url.toString();
+    return buildRequestUrl(apiBaseUrl, pathname, search);
   }
 
   function syncFavoriteSources() {

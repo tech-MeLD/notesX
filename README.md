@@ -8,6 +8,7 @@
 - 数据层：`Supabase PostgreSQL + Realtime + Edge Functions`
 - 部署：前端 Cloudflare，后端 Docker 部署到云服务器
 - 鉴权：`Supabase Auth (GitHub OAuth + Email Magic Link)`
+- 公共 API：前端默认通过同源 `/api/v1` 代理读取后端，避免 HTTPS 页面请求 HTTP API 的 Mixed Content 问题
 
 ## 目录
 
