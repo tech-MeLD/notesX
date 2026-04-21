@@ -9,6 +9,7 @@
 - 部署：前端 Cloudflare，后端 Docker 部署到云服务器
 - 鉴权：`Supabase Auth (GitHub OAuth + Email Magic Link)`
 - 公共 API：前端默认通过同源 `/api/v1` 代理读取后端，避免 HTTPS 页面请求 HTTP API 的 Mixed Content 问题
+- 后端入口：推荐用 `Caddy` 提供 `https://api.<your-domain>`，再由前端同源代理转发公共 GET 请求
 
 ## 目录
 
@@ -85,3 +86,4 @@
 - Supabase Edge Function 接数据库 webhook，把摘要完成事件写入 `rss_live_events`，前端通过 Realtime 订阅更新
 
 详细说明见 [architecture.md](/D:/AI_projects/codex_project/test04/docs/architecture.md) 和 [deployment-runbook.md](/D:/AI_projects/codex_project/test04/docs/deployment-runbook.md)。
+如果你当前正在处理 API 的 HTTPS、Caddy 和 Cloudflare DNS 切换，直接看 [api-https-cutover.md](/D:/AI_projects/codex_project/test04/docs/api-https-cutover.md)。

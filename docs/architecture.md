@@ -44,6 +44,7 @@ docs/
 - RSS 页面由一个 Svelte 组件承接交互，统一处理类目切换、源列表、标签筛选、订阅收藏和 Realtime 更新。
 - 邮箱登录回跳统一走 `/auth/confirm`，避免直接回跳业务页时 magic link/code 交换不稳定。
 - 公共 RSS 数据默认通过前端站点自己的 `/api/v1/*` 同源代理转发到 FastAPI，浏览器侧不再直接请求 HTTP API。
+- 后端正式入口推荐单独挂到 `https://api.<your-domain>`，由轻量反代统一接住 80/443，再回源到容器内的 FastAPI。
 
 ## 后端策略
 
@@ -135,6 +136,7 @@ docs/
 - 环境变量中填 Supabase 数据库连接串与 AI 服务配置。
 - 如果运行环境不保证 IPv6，优先使用 Supabase `Connect` 页面里的 session pooler 连接串，而不是 `db.<project-ref>.supabase.co:5432` 的直连地址。
 - 如果你还需要从浏览器直接访问 FastAPI 的 `/docs`，那仍然建议单独给后端配 HTTPS 域名或反向代理；但站点公共 RSS 展示不再依赖这一步。
+- 当前仓库已经内置最小反代方案：`docker-compose.yml` + `deploy/Caddyfile`，让 API 对外走 443，FastAPI 只在容器内和服务器本机暴露 8000。
 
 ### Supabase
 

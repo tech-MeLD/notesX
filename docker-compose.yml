@@ -10,5 +10,24 @@ services:
     env_file:
       - ./apps/api/.env
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     restart: unless-stopped
+
+  api-proxy:
+    image: caddy:2.10-alpine
+    depends_on:
+      - api
+    environment:
+      API_PUBLIC_HOST: ${API_PUBLIC_HOST:-localhost}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    restart: unless-stopped
+
+volumes:
+  caddy_data:
+  caddy_config:

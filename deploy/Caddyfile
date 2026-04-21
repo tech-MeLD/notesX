@@ -1,0 +1,5 @@
+{$API_PUBLIC_HOST:localhost} {
+  encode gzip zstd
+
+  reverse_proxy api:8000
+}

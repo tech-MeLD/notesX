@@ -37,7 +37,10 @@ export async function GET({ params, request, url }: { params: { path?: string };
   const response = await fetch(targetUrl, {
     method: "GET",
     headers: {
-      accept: request.headers.get("accept") ?? "application/json"
+      accept: request.headers.get("accept") ?? "application/json",
+      "user-agent": "knowledge-web-proxy/1.0",
+      "x-forwarded-host": url.host,
+      "x-forwarded-proto": url.protocol.replace(":", "")
     }
   });
 

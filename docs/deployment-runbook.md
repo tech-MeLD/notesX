@@ -262,6 +262,34 @@ Windows 下不建议默认使用 `--reload`。
 - [Dockerfile](/D:/AI_projects/codex_project/test04/apps/api/Dockerfile) 支持通过构建参数覆盖基础镜像和 PyPI 源
 - [docker-compose.yml](/D:/AI_projects/codex_project/test04/docker-compose.yml) 支持本地构建，也支持直接使用预构建镜像
 - [apps/api/.dockerignore](/D:/AI_projects/codex_project/test04/apps/api/.dockerignore) 已排除 `.venv`、`tests`、`egg-info`、日志等无关内容，减少构建上下文
+- [deploy/Caddyfile](/D:/AI_projects/codex_project/test04/deploy/Caddyfile) 提供最小 HTTPS 反代，把 `api.<your-domain>` 转发到容器内的 FastAPI
+
+#### 4.4.0 推荐入口：给后端配 HTTPS 域名
+
+建议现在就把后端 API 收口到一个正式域名，例如 `api.example.com`，而不是继续直接暴露 `http://IP:8000`。
+
+步骤：
+
+1. 在 Cloudflare DNS 中创建 `api.example.com` 的 `A` 记录，指向 ECS 公网 IP
+2. 保持 Cloudflare 代理开启
+3. 在服务器上设置：
+
+```bash
+export API_PUBLIC_HOST=api.example.com
+docker compose up -d api api-proxy
+```
+
+这会启动仓库内置的最小 Caddy 反代：
+
+- `api-proxy` 对外监听 `80/443`
+- `api` 只绑定到服务器本机 `127.0.0.1:8000`
+- Caddy 自动把 `https://api.example.com` 反代到 `api:8000`
+
+这样做的好处：
+
+- 浏览器、Cloudflare Worker 和你自己访问 `/docs` 都统一走 HTTPS
+- 不再依赖裸 IP + `:8000`
+- FastAPI 本身不直接暴露到公网
 
 #### 4.4.1 立即可用方案：继续在 ECS 上现构
 
@@ -412,6 +440,7 @@ Copy-Item apps/web/.env.example apps/web/.env
 - 这几个 `PUBLIC_*` 值会在构建阶段注入到前端，不需要额外放进 Worker Secret
 - `API_ORIGIN` 只给 Astro/Cloudflare 服务端代理使用，不会暴露给浏览器
 - 前端现在默认通过同源 `/api/v1` 代理去取公共 RSS 数据，这样即使后端暂时只有 HTTP，也不会再触发 Mixed Content
+- 正式环境推荐把 `API_ORIGIN` 填成 `https://api.<your-domain>`，不要再继续使用裸 IP
 - 如果你后面改成 Cloudflare Workers Builds 或 GitHub 自动部署，再把同样的 `PUBLIC_*` 变量配置到 Cloudflare 的构建环境即可
 - 这两个 Supabase 公共变量同时也是前端登录和收藏功能的必填项
 - 只有当你已经给后端单独配好了 HTTPS 域名时，才需要额外设置 `PUBLIC_API_BASE_URL=https://...`
@@ -487,9 +516,10 @@ compatibility_flags = ["nodejs_compat", "global_fetch_strictly_public"]
 
 1. 把前端 Worker 绑定到主域名或子域名，例如 `knowledge.example.com`
 2. 把后端 API 单独绑定到另一个子域名，例如 `api.example.com`
-3. 前端 `.env` 里的 `PUBLIC_API_BASE_URL` 指向 `https://api.example.com`
-4. 后端 `.env` 里的 `PUBLIC_SITE_URL` 指向 `https://knowledge.example.com`
-5. `BACKEND_CORS_ORIGINS` 填 `https://knowledge.example.com`
+3. 前端 `.env` 里的 `API_ORIGIN` 指向 `https://api.example.com`
+4. 如果你确实需要让浏览器直接访问这个 API 域名，再额外设置 `PUBLIC_API_BASE_URL=https://api.example.com`
+5. 后端 `.env` 里的 `PUBLIC_SITE_URL` 指向 `https://knowledge.example.com`
+6. `BACKEND_CORS_ORIGINS` 填 `https://knowledge.example.com`
 
 推荐分域：
 
@@ -511,11 +541,12 @@ compatibility_flags = ["nodejs_compat", "global_fetch_strictly_public"]
 7. 登录后收藏一个订阅源，确认只在当前账户下可见
 8. 如果配了 AI，再确认 `rss_live_events` 会随着摘要完成持续写入
 
-如果你在浏览器里打开站点时曾遇到 `Mixed Content`：
+如果你在浏览器里打开站点时曾遇到 `Mixed Content` 或现在又看到 `403`：
 
-- 现在优先检查前端是否已经重新部署到包含同源 `/api/v1` 代理的新版本
-- 再确认 `apps/web/.env` 里已经填写 `API_ORIGIN=http://<your-api-host>:8000`
-- 不要再把 `PUBLIC_API_BASE_URL` 留成 `http://...`，除非你明确要覆盖成 `https://...`
+- 先确认前端是否已经重新部署到包含同源 `/api/v1` 代理的新版本
+- 再确认 `apps/web/.env` 里已经填写 `API_ORIGIN=https://api.<your-domain>`
+- 不要再把 `PUBLIC_API_BASE_URL` 留成 `http://...`
+- 如果还是 `403`，优先切到 `api.<your-domain>` + Caddy 这条路径，再重新部署前端
 
 ## 8. 你现在最推荐的最小上线顺序
 
