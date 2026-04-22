@@ -15,6 +15,8 @@ graph LR
   Vault["Obsidian Vault"] --> Sync["notes:sync script"]
   Sync --> Astro["Astro Content Collections"]
   RSS["RSS Sources"] --> API["FastAPI Ingestion API"]
+  API --> Relay["Private RSS Relay on Cloudflare Worker"]
+  Relay --> RSS
   API --> DB["Supabase PostgreSQL"]
   DB --> Webhook["Database Webhook"]
   Webhook --> Edge["Edge Function: rss-summary-ready"]
@@ -45,6 +47,7 @@ docs/
 - 邮箱登录回跳统一走 `/auth/confirm`，避免直接回跳业务页时 magic link/code 交换不稳定。
 - 公共 RSS 数据默认通过前端站点自己的 `/api/v1/*` 同源代理转发到 FastAPI，浏览器侧不再直接请求 HTTP API。
 - 后端正式入口推荐单独挂到 `https://api.<your-domain>`，由轻量反代统一接住 80/443，再回源到容器内的 FastAPI。
+- 对少数直接抓取失败率较高的站点，可以复用现有 Cloudflare Worker 增加一个私有 `/internal/rss-fetch` 中转端点，后端按域名白名单选择性启用，而不是额外维护第二个 Worker 服务。
 
 ## 后端策略
 
@@ -59,6 +62,7 @@ docs/
 - `APScheduler` 在 API 进程内运行定时抓取，避免单独引入消息队列和 worker。
 - 调度器在服务启动后会立即执行一次抓取，然后再按间隔继续运行，减少部署后长时间停留在旧数据的情况。
 - RSS 解析、热度计算、AI 摘要与 AI 标签都集中在 `app/services/rss_service.py` 和 `app/services/summary_service.py`。
+- RSS 抓取默认还是由 FastAPI 直接发起，只有像 IMF 这类明确需要兜底的域名，才会改走私有中转，保持整体链路简单。
 - 管理接口默认支持两种保护方式：
   - Supabase Auth JWT
   - `X-Admin-Token` 作为本地或服务器侧兜底
@@ -128,6 +132,7 @@ docs/
 - DNS 统一托管在 Cloudflare。
 - 建议开启 `nodejs_compat`，因为 Svelte SSR 在 Cloudflare 上会用到 Node 兼容能力。
 - 公共 GET 接口建议继续走同源代理；这样即使后端暂时只有 HTTP，站点本身也不会触发 Mixed Content。
+- 如果要为困难 RSS 源启用中转，直接把同一个 Cloudflare Worker 当作私有抓取 relay 使用即可，不需要额外新建独立 Worker 项目。
 
 ### 后端
 
@@ -137,6 +142,7 @@ docs/
 - 如果运行环境不保证 IPv6，优先使用 Supabase `Connect` 页面里的 session pooler 连接串，而不是 `db.<project-ref>.supabase.co:5432` 的直连地址。
 - 如果你还需要从浏览器直接访问 FastAPI 的 `/docs`，那仍然建议单独给后端配 HTTPS 域名或反向代理；但站点公共 RSS 展示不再依赖这一步。
 - 当前仓库已经内置最小反代方案：`docker-compose.yml` + `deploy/Caddyfile`，让 API 对外走 443，FastAPI 只在容器内和服务器本机暴露 8000。
+- 如果某些 RSS 源持续返回 403、429 或直接超时，优先先把它们加入私有 relay 白名单，而不是继续堆新的抓取服务或浏览器自动化。
 
 ### Supabase
 
@@ -152,4 +158,5 @@ docs/
 
 - 内容与数据彻底分层：Obsidian 继续写作，FastAPI 继续聚合，Supabase 继续承载数据和鉴权。
 - 没有提前引入 Celery、Redis、Kafka 这类额外基础设施，足够轻，但扩展点都保留了。
+- 困难 RSS 源的兜底也复用了现有 Cloudflare 部署，不会再平添一个新运行时和一套新运维面。
 - 后续要加支付 API，只需要在 `apps/api` 下继续扩展路由和服务层，不会反向污染前端内容系统。

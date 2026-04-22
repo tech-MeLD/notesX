@@ -37,6 +37,9 @@ class Settings(BaseSettings):
     rss_summary_recovery_batch_size: int = 24
     rss_summary_failed_retry_after_minutes: int = 60
     rss_summary_processing_timeout_minutes: int = 20
+    rss_fetch_proxy_url: str | None = None
+    rss_fetch_proxy_token: str | None = None
+    rss_fetch_proxy_hosts: list[str] = Field(default_factory=list)
 
     db_pool_min_size: int = 1
     db_pool_max_size: int = 8
@@ -55,6 +58,15 @@ class Settings(BaseSettings):
             return [origin.strip() for origin in value.split(",") if origin.strip()]
         return value
 
+    @field_validator("rss_fetch_proxy_hosts", mode="before")
+    @classmethod
+    def split_hosts(cls, value: str | list[str]) -> list[str]:
+        if value is None or value == "":
+            return []
+        if isinstance(value, str):
+            return [host.strip().lower() for host in value.split(",") if host.strip()]
+        return [host.strip().lower() for host in value if isinstance(host, str) and host.strip()]
+
     @property
     def resolved_supabase_jwks_url(self) -> str | None:
         if self.supabase_jwks_url:
@@ -70,6 +82,10 @@ class Settings(BaseSettings):
         if self.supabase_url:
             return f"{self.supabase_url.rstrip('/')}/auth/v1"
         return None
+
+    @property
+    def rss_fetch_proxy_enabled(self) -> bool:
+        return bool(self.rss_fetch_proxy_url and self.rss_fetch_proxy_token)
 
 
 settings = Settings()

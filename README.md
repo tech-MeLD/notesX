@@ -10,6 +10,7 @@
 - 鉴权：`Supabase Auth (GitHub OAuth + Email Magic Link)`
 - 公共 API：前端默认通过同源 `/api/v1` 代理读取后端，避免 HTTPS 页面请求 HTTP API 的 Mixed Content 问题
 - 后端入口：推荐用 `Caddy` 提供 `https://api.<your-domain>`，再由前端同源代理转发公共 GET 请求
+- 困难 RSS 源：可复用现有 Cloudflare Worker 增加一个私有 RSS 抓取中转端点，只对白名单站点启用
 
 ## 目录
 
@@ -66,7 +67,7 @@
 
 相关文件：
 
-- `supabase/seeds/rss_test_sources.sql`
+- `supabase/seeds/rss_sources.sql`
 - `supabase/seed.sql`
 - `supabase/config.toml`
 
@@ -76,6 +77,7 @@
 - RSS 数据实时落到 Supabase PostgreSQL，默认通过 UNLOGGED 缓存表做短时查询缓存
 - FastAPI 负责异步抓取、聚合、标签过滤、热度计算与 AI 摘要
 - RSS 源带有独立类目字段，前端可以按科技、金融、经济浏览全部订阅源并直接订阅
+- 对 IMF 这类直接抓取不稳定的源，后端可以选择性改走已部署站点的 `/internal/rss-fetch` 私有中转，不需要额外创建第二个 Worker 服务
 - RSS 只展示并保留最近 30 天的数据，超出窗口的数据会在抓取后和定时任务中清理
 - 标签由 AI 从条目正文分析生成，单条最多 5 个，只展示最近 30 天内出现次数大于等于 5 的标签
 - 用户登录使用 Supabase Auth，支持 GitHub 登录和邮箱魔法链接登录

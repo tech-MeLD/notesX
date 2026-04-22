@@ -6,10 +6,12 @@ import hashlib
 import json
 import logging
 import re
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
 from html import unescape
 from typing import Any
+from urllib.parse import urlparse
 
 import asyncpg
 import feedparser
@@ -27,6 +29,14 @@ html_tag_re = re.compile(r"<[^>]+>")
 slug_char_re = re.compile(r"[^a-z0-9]+")
 RSS_RETENTION_DAYS = 30
 RSS_TAG_MIN_COUNT = 5
+
+
+@dataclass(slots=True)
+class FeedFetchResult:
+    status_code: int
+    text: str
+    etag: str | None
+    last_modified: str | None
 
 
 def _slugify(value: str) -> str:
@@ -53,6 +63,14 @@ def _parse_datetime(entry: dict[str, Any]) -> datetime | None:
             return parsed.astimezone(UTC)
 
     return None
+
+
+def _feed_host(feed_url: str) -> str:
+    return (urlparse(feed_url).hostname or "").lower()
+
+
+def _should_proxy_feed(feed_url: str) -> bool:
+    return settings.rss_fetch_proxy_enabled and _feed_host(feed_url) in settings.rss_fetch_proxy_hosts
 
 
 def _serialize_row(row: asyncpg.Record) -> dict[str, Any]:
@@ -559,6 +577,69 @@ async def _upsert_feed_entry(pool: asyncpg.Pool, source: asyncpg.Record, raw_ent
     )
 
 
+async def _fetch_feed_direct(
+    client: httpx.AsyncClient,
+    *,
+    feed_url: str,
+    headers: dict[str, str],
+) -> FeedFetchResult:
+    response = await client.get(feed_url, headers=headers)
+    return FeedFetchResult(
+        status_code=response.status_code,
+        text=response.text,
+        etag=response.headers.get("etag"),
+        last_modified=response.headers.get("last-modified"),
+    )
+
+
+async def _fetch_feed_via_proxy(
+    client: httpx.AsyncClient,
+    *,
+    feed_url: str,
+    headers: dict[str, str],
+) -> FeedFetchResult:
+    if not settings.rss_fetch_proxy_url or not settings.rss_fetch_proxy_token:
+        raise RuntimeError("RSS fetch proxy is not configured")
+
+    response = await client.post(
+        settings.rss_fetch_proxy_url,
+        headers={
+            "content-type": "application/json",
+            "x-rss-fetch-proxy-token": settings.rss_fetch_proxy_token,
+        },
+        json={"url": feed_url, "headers": headers},
+    )
+    return FeedFetchResult(
+        status_code=response.status_code,
+        text=response.text,
+        etag=response.headers.get("etag"),
+        last_modified=response.headers.get("last-modified"),
+    )
+
+
+async def _fetch_feed(
+    client: httpx.AsyncClient,
+    *,
+    feed_url: str,
+    headers: dict[str, str],
+) -> FeedFetchResult:
+    if _should_proxy_feed(feed_url):
+        try:
+            proxy_result = await _fetch_feed_via_proxy(client, feed_url=feed_url, headers=headers)
+            if proxy_result.status_code in {200, 304}:
+                return proxy_result
+
+            logger.warning(
+                "RSS fetch proxy returned %s for %s; falling back to direct fetch",
+                proxy_result.status_code,
+                feed_url,
+            )
+        except Exception:  # noqa: BLE001
+            logger.warning("RSS fetch proxy failed for %s; falling back to direct fetch", feed_url, exc_info=True)
+
+    return await _fetch_feed_direct(client, feed_url=feed_url, headers=headers)
+
+
 async def _fetch_single_source(
     pool: asyncpg.Pool,
     client: httpx.AsyncClient,
@@ -571,13 +652,15 @@ async def _fetch_single_source(
         headers["If-Modified-Since"] = source["feed_last_modified"]
 
     try:
-        response = await client.get(source["feed_url"], headers=headers)
-        if response.status_code == 304:
+        result = await _fetch_feed(client, feed_url=source["feed_url"], headers=headers)
+        if result.status_code == 304:
             await _update_source_status(pool, source_id=source["id"], status="not_modified")
             return {"upserted": 0, "pending": [], "skipped": 1}
 
-        response.raise_for_status()
-        parsed = feedparser.parse(response.text)
+        if result.status_code >= 400:
+            raise ValueError(f"RSS request failed with status {result.status_code}: {source['feed_url']}")
+
+        parsed = feedparser.parse(result.text)
         if getattr(parsed, "bozo", 0) and not parsed.entries:
             raise ValueError(f"Unable to parse RSS feed: {source['feed_url']}")
 
@@ -592,8 +675,8 @@ async def _fetch_single_source(
             pool,
             source_id=source["id"],
             status="ok",
-            etag=response.headers.get("etag"),
-            last_modified=response.headers.get("last-modified"),
+            etag=result.etag,
+            last_modified=result.last_modified,
         )
         return {"upserted": len(parsed.entries), "pending": pending_rows, "skipped": 0}
     except Exception as error:  # noqa: BLE001

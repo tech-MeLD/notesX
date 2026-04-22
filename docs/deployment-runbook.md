@@ -6,6 +6,7 @@
 - 后端 FastAPI 部署到你的云服务器 Docker
 - 数据与鉴权交给 Supabase
 - 初始 RSS 源直接导入
+- 困难 RSS 源按需复用 Cloudflare Worker 私有抓取中转
 - 不额外引入 Redis、消息队列、K8s 等复杂组件
 
 ## 0. 你最终会得到什么
@@ -112,15 +113,15 @@ supabase db push
 
 ### 3.4 导入 RSS 源
 
-项目已经把测试源接进了 Supabase seed 配置：
+项目已经把正式 RSS 源接进了 Supabase seed 配置：
 
 - [config.toml](/D:/AI_projects/codex_project/test04/supabase/config.toml)
 - [seed.sql](/D:/AI_projects/codex_project/test04/supabase/seed.sql)
-- [rss_test_sources.sql](/D:/AI_projects/codex_project/test04/supabase/seeds/rss_test_sources.sql)
+- [rss_sources.sql](/D:/AI_projects/codex_project/test04/supabase/seeds/rss_sources.sql)
 
 注意：`supabase db push` 只负责 migration，不会自动把这些测试源插入远端线上库。
 
-线上首次部署时，最直接的做法仍然是在 Supabase SQL Editor 中执行 [rss_test_sources.sql](/D:/AI_projects/codex_project/test04/supabase/seeds/rss_test_sources.sql) 的内容。
+线上首次部署时，最直接的做法仍然是在 Supabase SQL Editor 中执行 [rss_sources.sql](/D:/AI_projects/codex_project/test04/supabase/seeds/rss_sources.sql) 的内容。
 
 如果你是本地联调，执行 `supabase db reset` 时会自动跑 seed。
 
@@ -226,12 +227,16 @@ Copy-Item apps/api/.env.example apps/api/.env
 - `AI_MODEL`
 - `PUBLIC_SITE_URL`
 - `BACKEND_CORS_ORIGINS`
+- `RSS_FETCH_PROXY_URL`
+- `RSS_FETCH_PROXY_TOKEN`
+- `RSS_FETCH_PROXY_HOSTS`
 
 说明：
 
 - 如果你只想先验证 RSS 抓取链路，可以先不填 `AI_API_KEY`，这样摘要会跳过，但抓取和聚合仍然可以跑。
 - `ADMIN_API_TOKEN` 用于手动触发抓取任务时保护管理接口。
 - `PUBLIC_SITE_URL` 和前端最终域名保持一致，这样 GitHub OAuth 与邮箱 Magic Link 回跳地址才会稳定。
+- `RSS_FETCH_PROXY_*` 默认可以全部留空；只有少数高防 RSS 域名持续抓取失败时，才需要启用这组配置。
 
 ### 4.3 本地启动后端验证
 
@@ -399,6 +404,7 @@ curl -X POST http://127.0.0.1:8000/api/v1/rss-fetch-jobs \
 - `rss_live_events` 会收到 Edge Function 写入的事件
 - 前端 `/rss` 页面只会展示最近 30 天的条目，标签筛选只展示出现次数大于等于 5 的标签
 - 前端会显示源类目、全部 RSS 源列表，并支持直接订阅
+- 如果你启用了私有 RSS 中转，困难源会优先通过 Worker 转发抓取，失败时再回落到服务器直连
 
 ## 5. 部署前端到 Cloudflare
 
@@ -432,6 +438,8 @@ Copy-Item apps/web/.env.example apps/web/.env
 - `PUBLIC_SUPABASE_URL`
 - `PUBLIC_SUPABASE_ANON_KEY`
 - `API_ORIGIN`
+- `RSS_FETCH_PROXY_TOKEN`
+- `RSS_FETCH_PROXY_ALLOWED_HOSTS`
 - `OBSIDIAN_VAULT_DIR` 仅本地同步笔记时需要，线上部署可以不填
 
 说明：
@@ -439,11 +447,38 @@ Copy-Item apps/web/.env.example apps/web/.env
 - 你现在采用的是“本地 build，再用 Wrangler deploy”的最小方案，所以前端部署时直接读取本地 `apps/web/.env`
 - 这几个 `PUBLIC_*` 值会在构建阶段注入到前端，不需要额外放进 Worker Secret
 - `API_ORIGIN` 只给 Astro/Cloudflare 服务端代理使用，不会暴露给浏览器
+- `RSS_FETCH_PROXY_TOKEN` 只给 Worker 里的私有 RSS 抓取中转端点使用，也不会暴露给浏览器
+- `RSS_FETCH_PROXY_ALLOWED_HOSTS` 用来限制可被中转的 RSS 域名，建议只填极少数确实需要兜底的站点，例如 `www.imf.org`
 - 前端现在默认通过同源 `/api/v1` 代理去取公共 RSS 数据，这样即使后端暂时只有 HTTP，也不会再触发 Mixed Content
 - 正式环境推荐把 `API_ORIGIN` 填成 `https://api.<your-domain>`，不要再继续使用裸 IP
 - 如果你后面改成 Cloudflare Workers Builds 或 GitHub 自动部署，再把同样的 `PUBLIC_*` 变量配置到 Cloudflare 的构建环境即可
 - 这两个 Supabase 公共变量同时也是前端登录和收藏功能的必填项
 - 只有当你已经给后端单独配好了 HTTPS 域名时，才需要额外设置 `PUBLIC_API_BASE_URL=https://...`
+
+### 5.1.1 何时启用私有 RSS 抓取中转
+
+默认不要启用。
+
+只有当你确认某个 RSS 源在服务器直连时长期返回 403、429、超时，或者像 IMF 这类站点在国内链路下明显更不稳定时，再启用。推荐只对白名单域名打开，而不是把全部 RSS 都改走中转。
+
+建议的最小配置：
+
+前端 `apps/web/.env`：
+
+```env
+RSS_FETCH_PROXY_TOKEN=<strong-random-token>
+RSS_FETCH_PROXY_ALLOWED_HOSTS=www.imf.org
+```
+
+后端 `apps/api/.env`：
+
+```env
+RSS_FETCH_PROXY_URL=https://knowledge.example.com/internal/rss-fetch
+RSS_FETCH_PROXY_TOKEN=<same-strong-random-token>
+RSS_FETCH_PROXY_HOSTS=www.imf.org
+```
+
+这样后端仍然以直连抓取为默认路径，只有 `www.imf.org` 这类白名单域名才会复用已部署的 Cloudflare Worker 做中转，不需要额外创建第二个 Worker 服务。
 
 ### 5.2 同步 Obsidian 内容
 
@@ -540,6 +575,7 @@ compatibility_flags = ["nodejs_compat", "global_fetch_strictly_public"]
 6. 点击顶部登录按钮，确认 GitHub 登录和邮箱登录都能正常回跳
 7. 登录后收藏一个订阅源，确认只在当前账户下可见
 8. 如果配了 AI，再确认 `rss_live_events` 会随着摘要完成持续写入
+9. 如果给 IMF 这类源启用了私有 RSS 中转，再确认这些源的 `last_fetch_status` 已恢复到 `ok` 或 `not_modified`
 
 如果你在浏览器里打开站点时曾遇到 `Mixed Content` 或现在又看到 `403`：
 
@@ -559,5 +595,6 @@ compatibility_flags = ["nodejs_compat", "global_fetch_strictly_public"]
 5. 部署后端 Docker 到云服务器
 6. 部署前端到 Cloudflare
 7. 最后再配置自定义域名和 Database Webhook
+8. 只有遇到少数高防 RSS 源时，再补上私有抓取中转配置
 
 这是当前项目最稳、最少绕路的方案。

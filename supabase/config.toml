@@ -2,7 +2,7 @@ project_id = "vynhlxzbokvglyfqwkjb"
 
 [db.seed]
 enabled = true
-sql_paths = ["./seeds/rss_test_sources.sql"]
+sql_paths = ["./seeds/rss_sources.sql"]
 
 [functions.rss-summary-ready]
 verify_jwt = false
