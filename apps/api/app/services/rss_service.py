@@ -84,10 +84,17 @@ def _build_feed_headers(source: asyncpg.Record) -> dict[str, str]:
 
     headers = {
         "User-Agent": settings.rss_fetch_user_agent,
-        "Accept": "application/rss+xml, application/xml, text/xml;q=0.9, */*;q=0.8",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
         "Accept-Language": settings.rss_fetch_accept_language,
-        "Cache-Control": "no-cache",
-        "Pragma": "no-cache",
+        "Accept-Encoding": "gzip, deflate, br",
+        "Connection": "keep-alive",
+        "Upgrade-Insecure-Requests": "1",
+        "Sec-Fetch-Dest": "document",
+        "Sec-Fetch-Mode": "navigate",
+        "Sec-Fetch-Site": "none",
+        "Sec-Fetch-User": "?1",
+        "Cache-Control": "max-age=0",
+        "DNT": "1",
     }
 
     if site_url:
@@ -713,8 +720,16 @@ async def _fetch_single_source(
             raise ValueError(f"RSS request failed with status {result.status_code}: {source['feed_url']}")
 
         parsed = feedparser.parse(result.text)
+        # 更加宽容的解析检查：只有当有 bozo 错误且完全没有条目时才报错
         if getattr(parsed, "bozo", 0) and not parsed.entries:
-            raise ValueError(f"Unable to parse RSS feed: {source['feed_url']}")
+            bozo_exception = getattr(parsed, "bozo_exception", None)
+            error_msg = f"Unable to parse RSS feed: {source['feed_url']}"
+            if bozo_exception:
+                error_msg += f" ({type(bozo_exception).__name__})"
+            raise ValueError(error_msg)
+        # 即使有 bozo 警告但有条目，也继续处理（只是记录警告）
+        if getattr(parsed, "bozo", 0):
+            logger.warning("RSS feed parsed with warnings for %s", source["feed_url"])
 
         pending_rows: list[dict[str, Any]] = []
         for raw_entry in parsed.entries:
