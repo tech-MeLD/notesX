@@ -73,6 +73,38 @@ def _should_proxy_feed(feed_url: str) -> bool:
     return settings.rss_fetch_proxy_enabled and _feed_host(feed_url) in settings.rss_fetch_proxy_hosts
 
 
+def _is_retryable_status(status_code: int) -> bool:
+    return status_code in {401, 403, 408, 409, 425, 429} or 500 <= status_code < 600
+
+
+def _build_feed_headers(source: asyncpg.Record) -> dict[str, str]:
+    site_url = source.get("site_url") or source.get("feed_url")
+    parsed_site_url = urlparse(site_url or "")
+    origin = f"{parsed_site_url.scheme}://{parsed_site_url.netloc}" if parsed_site_url.scheme and parsed_site_url.netloc else None
+
+    headers = {
+        "User-Agent": settings.rss_fetch_user_agent,
+        "Accept": "application/rss+xml, application/xml, text/xml;q=0.9, */*;q=0.8",
+        "Accept-Language": settings.rss_fetch_accept_language,
+        "Cache-Control": "no-cache",
+        "Pragma": "no-cache",
+    }
+
+    if site_url:
+        headers["Referer"] = site_url
+    if origin:
+        headers["Origin"] = origin
+
+    return headers
+
+
+def _describe_error(error: Exception) -> str:
+    message = str(error).strip()
+    if message:
+        return message
+    return error.__class__.__name__
+
+
 def _serialize_row(row: asyncpg.Record) -> dict[str, Any]:
     payload: dict[str, Any] = {}
     for key, value in row.items():
@@ -623,21 +655,41 @@ async def _fetch_feed(
     feed_url: str,
     headers: dict[str, str],
 ) -> FeedFetchResult:
+    direct_error: Exception | None = None
+
+    try:
+        direct_result = await _fetch_feed_direct(client, feed_url=feed_url, headers=headers)
+        if direct_result.status_code in {200, 304}:
+            return direct_result
+
+        if not (_should_proxy_feed(feed_url) and _is_retryable_status(direct_result.status_code)):
+            return direct_result
+
+        logger.warning(
+            "Direct RSS fetch returned %s for %s; retrying via proxy",
+            direct_result.status_code,
+            feed_url,
+        )
+    except httpx.HTTPError as error:
+        direct_error = error
+        if not _should_proxy_feed(feed_url):
+            raise
+
+        logger.warning("Direct RSS fetch failed for %s; retrying via proxy", feed_url, exc_info=True)
+
     if _should_proxy_feed(feed_url):
         try:
-            proxy_result = await _fetch_feed_via_proxy(client, feed_url=feed_url, headers=headers)
-            if proxy_result.status_code in {200, 304}:
-                return proxy_result
+            return await _fetch_feed_via_proxy(client, feed_url=feed_url, headers=headers)
+        except Exception as proxy_error:  # noqa: BLE001
+            logger.warning("RSS fetch proxy failed for %s", feed_url, exc_info=True)
+            if direct_error is not None:
+                raise direct_error
+            raise proxy_error
 
-            logger.warning(
-                "RSS fetch proxy returned %s for %s; falling back to direct fetch",
-                proxy_result.status_code,
-                feed_url,
-            )
-        except Exception:  # noqa: BLE001
-            logger.warning("RSS fetch proxy failed for %s; falling back to direct fetch", feed_url, exc_info=True)
+    if direct_error is not None:
+        raise direct_error
 
-    return await _fetch_feed_direct(client, feed_url=feed_url, headers=headers)
+    raise RuntimeError(f"RSS fetch unexpectedly failed for {feed_url}")
 
 
 async def _fetch_single_source(
@@ -645,7 +697,7 @@ async def _fetch_single_source(
     client: httpx.AsyncClient,
     source: asyncpg.Record,
 ) -> dict[str, Any]:
-    headers = {"User-Agent": "knowledge-observatory/0.1"}
+    headers = _build_feed_headers(source)
     if source.get("feed_etag"):
         headers["If-None-Match"] = source["feed_etag"]
     if source.get("feed_last_modified"):
@@ -681,7 +733,7 @@ async def _fetch_single_source(
         return {"upserted": len(parsed.entries), "pending": pending_rows, "skipped": 0}
     except Exception as error:  # noqa: BLE001
         logger.exception("Failed to ingest RSS source %s", source["feed_url"])
-        await _update_source_status(pool, source_id=source["id"], status="failed", error=str(error))
+        await _update_source_status(pool, source_id=source["id"], status="failed", error=_describe_error(error))
         return {"upserted": 0, "pending": [], "skipped": 1}
 
 

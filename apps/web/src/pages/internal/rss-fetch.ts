@@ -19,11 +19,17 @@ function getAllowedHosts() {
 function copyForwardHeaders(headers: Record<string, string> | undefined) {
   const forwardHeaders = new Headers({
     accept: "application/rss+xml, application/xml, text/xml;q=0.9, */*;q=0.8",
-    "user-agent": "knowledge-rss-fetch-proxy/1.0"
+    "accept-language": "en-US,en;q=0.9,zh-CN;q=0.8",
+    "cache-control": "no-cache",
+    pragma: "no-cache",
+    "user-agent":
+      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36"
   });
 
   const etag = headers?.["If-None-Match"] ?? headers?.["if-none-match"];
   const lastModified = headers?.["If-Modified-Since"] ?? headers?.["if-modified-since"];
+  const referer = headers?.Referer ?? headers?.referer;
+  const origin = headers?.Origin ?? headers?.origin;
 
   if (typeof etag === "string" && etag.trim()) {
     forwardHeaders.set("if-none-match", etag.trim());
@@ -31,6 +37,14 @@ function copyForwardHeaders(headers: Record<string, string> | undefined) {
 
   if (typeof lastModified === "string" && lastModified.trim()) {
     forwardHeaders.set("if-modified-since", lastModified.trim());
+  }
+
+  if (typeof referer === "string" && referer.trim()) {
+    forwardHeaders.set("referer", referer.trim());
+  }
+
+  if (typeof origin === "string" && origin.trim()) {
+    forwardHeaders.set("origin", origin.trim());
   }
 
   return forwardHeaders;

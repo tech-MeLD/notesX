@@ -37,6 +37,12 @@ class Settings(BaseSettings):
     rss_summary_recovery_batch_size: int = 24
     rss_summary_failed_retry_after_minutes: int = 60
     rss_summary_processing_timeout_minutes: int = 20
+    rss_fetch_user_agent: str = (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/136.0.0.0 Safari/537.36"
+    )
+    rss_fetch_accept_language: str = "en-US,en;q=0.9,zh-CN;q=0.8"
     rss_fetch_proxy_url: str | None = None
     rss_fetch_proxy_token: str | None = None
     rss_fetch_proxy_hosts: list[str] = Field(default_factory=list)

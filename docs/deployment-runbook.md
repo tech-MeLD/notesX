@@ -227,6 +227,8 @@ Copy-Item apps/api/.env.example apps/api/.env
 - `AI_MODEL`
 - `PUBLIC_SITE_URL`
 - `BACKEND_CORS_ORIGINS`
+- `RSS_FETCH_USER_AGENT`
+- `RSS_FETCH_ACCEPT_LANGUAGE`
 - `RSS_FETCH_PROXY_URL`
 - `RSS_FETCH_PROXY_TOKEN`
 - `RSS_FETCH_PROXY_HOSTS`
@@ -237,6 +239,7 @@ Copy-Item apps/api/.env.example apps/api/.env
 - `ADMIN_API_TOKEN` 用于手动触发抓取任务时保护管理接口。
 - `PUBLIC_SITE_URL` 和前端最终域名保持一致，这样 GitHub OAuth 与邮箱 Magic Link 回跳地址才会稳定。
 - `RSS_FETCH_PROXY_*` 默认可以全部留空；只有少数高防 RSS 域名持续抓取失败时，才需要启用这组配置。
+- 当前后端默认会用更接近正常浏览器的 RSS 请求头直连抓取；如果仍然遇到 403/429，再对白名单域名回退到 Cloudflare Worker 中转。
 
 ### 4.3 本地启动后端验证
 
@@ -467,7 +470,7 @@ Copy-Item apps/web/.env.example apps/web/.env
 
 ```env
 RSS_FETCH_PROXY_TOKEN=<strong-random-token>
-RSS_FETCH_PROXY_ALLOWED_HOSTS=www.imf.org
+RSS_FETCH_PROXY_ALLOWED_HOSTS=www.imf.org,www.investing.com
 ```
 
 后端 `apps/api/.env`：
@@ -475,10 +478,10 @@ RSS_FETCH_PROXY_ALLOWED_HOSTS=www.imf.org
 ```env
 RSS_FETCH_PROXY_URL=https://knowledge.example.com/internal/rss-fetch
 RSS_FETCH_PROXY_TOKEN=<same-strong-random-token>
-RSS_FETCH_PROXY_HOSTS=www.imf.org
+RSS_FETCH_PROXY_HOSTS=www.imf.org,www.investing.com
 ```
 
-这样后端仍然以直连抓取为默认路径，只有 `www.imf.org` 这类白名单域名才会复用已部署的 Cloudflare Worker 做中转，不需要额外创建第二个 Worker 服务。
+这样后端仍然以直连抓取为默认路径，只有 `www.imf.org`、`www.investing.com` 这类白名单域名才会在直连遇到 403、429 或传输异常时复用已部署的 Cloudflare Worker 做中转，不需要额外创建第二个 Worker 服务。
 
 ### 5.2 同步 Obsidian 内容
 
